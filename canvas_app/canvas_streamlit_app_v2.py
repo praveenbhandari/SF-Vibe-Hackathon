@@ -777,38 +777,70 @@ class CanvasCourseExplorer:
         elif sort_by == "Points":
             filtered_assignments.sort(key=lambda x: x.get('points_possible') or 0, reverse=True)
         
-        # Display assignments
-        for assignment in filtered_assignments:
-            with st.container():
-                col1, col2, col3 = st.columns([3, 1, 1])
-                
-                with col1:
-                    st.write(f"**{assignment.get('name', 'No name')}**")
-                    if assignment.get('description'):
-                        st.write(assignment.get('description')[:200] + "..." if len(assignment.get('description', '')) > 200 else assignment.get('description'))
-                
-                with col2:
-                    due_date = assignment.get('due_at')
-                    if due_date:
-                        try:
-                            # Format the date nicely
-                            from datetime import datetime
-                            dt = datetime.fromisoformat(due_date.replace('Z', '+00:00'))
-                            formatted_date = dt.strftime('%Y-%m-%d')
-                            st.write(f"**Due:** {formatted_date}")
-                        except:
-                            st.write(f"**Due:** {due_date[:10]}")
-                    else:
-                        st.write("**Due:** No due date")
-                
-                with col3:
-                    points = assignment.get('points_possible')
-                    if points is not None:
-                        st.write(f"**Points:** {points}")
-                    else:
-                        st.write("**Points:** N/A")
-                
-                st.markdown("---")
+        # Display assignments with improved formatting
+        if not filtered_assignments:
+            st.info("📝 No assignments found matching your criteria.")
+        else:
+            st.write(f"📋 **Found {len(filtered_assignments)} assignments:**")
+            
+            for i, assignment in enumerate(filtered_assignments, 1):
+                with st.container():
+                    # Create a card-like appearance
+                    st.markdown(
+                        f"""
+                        <div style="
+                            background-color: #f8f9fa;
+                            border-left: 4px solid #4CAF50;
+                            padding: 1rem;
+                            margin: 0.5rem 0;
+                            border-radius: 0 8px 8px 0;
+                            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                        ">
+                        </div>
+                        """, 
+                        unsafe_allow_html=True
+                    )
+                    
+                    col1, col2, col3 = st.columns([3, 1, 1])
+                    
+                    with col1:
+                        # Assignment title with number
+                        st.markdown(f"### 📝 {i}. {assignment.get('name', 'No name')}")
+                        
+                        # Description with better formatting
+                        if assignment.get('description'):
+                            desc = assignment.get('description', '')
+                            if len(desc) > 200:
+                                with st.expander("📄 View Description"):
+                                    st.markdown(desc)
+                            else:
+                                st.markdown(f"*{desc}*")
+                    
+                    with col2:
+                        due_date = assignment.get('due_at')
+                        if due_date:
+                            try:
+                                from datetime import datetime
+                                dt = datetime.fromisoformat(due_date.replace('Z', '+00:00'))
+                                formatted_date = dt.strftime('%B %d, %Y')
+                                st.markdown(f"📅 **Due Date**")
+                                st.markdown(f"🕒 {formatted_date}")
+                            except:
+                                st.markdown(f"📅 **Due Date**")
+                                st.markdown(f"🕒 {due_date[:10]}")
+                        else:
+                            st.markdown(f"📅 **Due Date**")
+                            st.markdown("⏰ No due date")
+                    
+                    with col3:
+                        points = assignment.get('points_possible')
+                        st.markdown(f"🎯 **Points**")
+                        if points is not None:
+                            st.markdown(f"⭐ {points} pts")
+                        else:
+                            st.markdown("➖ N/A")
+                    
+                    st.markdown("<br>", unsafe_allow_html=True)
     
     def render_modules_section(self):
         """Render modules section with file download functionality"""
@@ -819,26 +851,60 @@ class CanvasCourseExplorer:
         
         modules = st.session_state.course_data['modules']
         
-        for module in modules:
-            with st.expander(f"📁 {module.get('name', 'Unnamed Module')}"):
-                st.write(f"**Description:** {module.get('description', 'No description')}")
-                st.write(f"**Items:** {len(module.get('items', []))}")
+        for i, module in enumerate(modules, 1):
+            with st.expander(f"📚 {i}. {module.get('name', 'Unnamed Module')} ({len(module.get('items', []))} items)", expanded=False):
+                # Module header with stats
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    if module.get('description'):
+                        st.markdown(f"📄 **Description:** {module.get('description', 'No description')}")
+                    else:
+                        st.markdown("📄 **Description:** *No description available*")
                 
-                # Show module items
+                with col2:
+                    st.metric("📊 Items", len(module.get('items', [])))
+                
+                st.divider()
+                
+                # Show module items with better formatting
                 items = module.get('items', [])
                 if items:
-                    st.write("**Module Items:**")
+                    st.markdown("### 📋 Module Contents:")
+                    
+                    # Group items by type for better organization
+                    item_types = {}
                     for item in items:
                         item_type = item.get('type', 'Unknown')
-                        item_title = item.get('title', 'Untitled')
-                        item_url = item.get('html_url', '')
+                        if item_type not in item_types:
+                            item_types[item_type] = []
+                        item_types[item_type].append(item)
+                    
+                    # Display items grouped by type
+                    for item_type, type_items in item_types.items():
+                        # Get appropriate icon for item type
+                        type_icons = {
+                            'File': '📄',
+                            'Page': '📝',
+                            'Assignment': '📝',
+                            'Discussion': '💬',
+                            'Quiz': '❓',
+                            'ExternalUrl': '🔗',
+                            'ExternalTool': '🛠️'
+                        }
+                        icon = type_icons.get(item_type, '📌')
                         
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            if item_url:
-                                st.markdown(f"- **{item_type}**: [{item_title}]({item_url})")
-                            else:
-                                st.write(f"- **{item_type}**: {item_title}")
+                        st.markdown(f"#### {icon} {item_type}s ({len(type_items)})")
+                        
+                        for j, item in enumerate(type_items, 1):
+                            item_title = item.get('title', 'Untitled')
+                            item_url = item.get('html_url', '')
+                            
+                            col1, col2 = st.columns([3, 1])
+                            with col1:
+                                if item_url:
+                                    st.markdown(f"   {j}. [{item_title}]({item_url}) 🔗")
+                                else:
+                                    st.markdown(f"   {j}. {item_title}")
                         
                         with col2:
                             # Add download button for file items
@@ -1767,13 +1833,67 @@ class CanvasCourseExplorer:
                         files_found.extend(course_dir.rglob(f'*{ext}'))
                     
                     if files_found:
-                        st.write(f"**Found {len(files_found)} supported files:**")
-                        for file_path in files_found[:10]:  # Show first 10 files
-                            relative_path = file_path.relative_to(course_dir)
-                            st.write(f"• {relative_path}")
+                        st.markdown(f"**📊 Found {len(files_found)} supported files:**")
                         
+                        # Create a grid layout for files
+                        cols = st.columns(2)
+                        for idx, file_path in enumerate(files_found[:10]):  # Show first 10 files
+                            relative_path = file_path.relative_to(course_dir)
+                            col = cols[idx % 2]
+                            
+                            with col:
+                                # Get file extension for appropriate icon
+                                file_ext = relative_path.suffix.lower().replace('.', '') if relative_path.suffix else ''
+                                file_icons = {
+                                    'pdf': '📕',
+                                    'doc': '📄',
+                                    'docx': '📄',
+                                    'txt': '📝',
+                                    'ppt': '📊',
+                                    'pptx': '📊',
+                                    'xls': '📈',
+                                    'xlsx': '📈',
+                                    'jpg': '🖼️',
+                                    'jpeg': '🖼️',
+                                    'png': '🖼️',
+                                    'gif': '🖼️',
+                                    'mp4': '🎥',
+                                    'mp3': '🎵',
+                                    'zip': '📦'
+                                }
+                                icon = file_icons.get(file_ext, '📄')
+                                
+                                # Create a styled file entry
+                                st.markdown(f"""
+                                <div style="
+                                    background-color: #f8f9fa;
+                                    padding: 8px 12px;
+                                    border-radius: 6px;
+                                    margin: 3px 0;
+                                    border-left: 3px solid #007bff;
+                                    font-size: 14px;
+                                ">
+                                    {icon} <strong>{relative_path.name}</strong><br>
+                                    <small style="color: #6c757d;">{relative_path.parent if relative_path.parent != Path('.') else 'Root'}</small>
+                                </div>
+                                """, unsafe_allow_html=True)
+                        
+                        # Show "and X more" if there are more files with better styling
                         if len(files_found) > 10:
-                            st.write(f"... and {len(files_found) - 10} more files")
+                            st.markdown(f"""
+                            <div style="
+                                text-align: center;
+                                padding: 12px;
+                                background-color: #e3f2fd;
+                                border-radius: 8px;
+                                margin: 15px 0;
+                                color: #1976d2;
+                                font-weight: bold;
+                                border: 1px dashed #1976d2;
+                            ">
+                                📁 ... and {len(files_found) - 10} more files
+                            </div>
+                            """, unsafe_allow_html=True)
                         
                         # Quick action buttons
                         col1, col2 = st.columns(2)

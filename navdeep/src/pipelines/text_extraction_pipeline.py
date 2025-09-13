@@ -20,7 +20,9 @@ class TextExtractionPipeline:
     """
     Unified pipeline for extracting text from various sources:
     - PDF documents
-    - DOC/DOCX documents  
+    - DOC/DOCX documents
+    - PPT/PPTX/PPSX presentations
+    - TXT text files
     - YouTube videos and playlists
     """
     
@@ -57,7 +59,7 @@ class TextExtractionPipeline:
     
     def extract_from_file(self, file_path: str) -> Dict[str, Any]:
         """
-        Extract text from a single file (PDF, DOC, DOCX)
+        Extract text from a single file (PDF, DOC, DOCX, PPT, TXT)
         
         Args:
             file_path: Path to the file

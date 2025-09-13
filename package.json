@@ -1,0 +1,31 @@
+{
+  "name": "canvas-ai-study-assistant",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Canvas LMS integration with AI-powered note generation",
+  "scripts": {
+    "start": "./start-dev.sh",
+    "start:frontend": "cd src && npm start",
+    "start:backend": "cd backend && npm start",
+    "start:canvas": "cd canvas_app && python canvas_streamlit_app_v2.py",
+    "install:all": "cd src && npm install && cd ../backend && npm install && cd ../canvas_app && pip install -r requirements.txt",
+    "build": "cd src && npm run build",
+    "test": "cd src && npm test"
+  },
+  "keywords": [
+    "canvas",
+    "lms",
+    "ai",
+    "notes",
+    "react",
+    "typescript"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.1.13",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.13"
+  }
+}

@@ -1,0 +1,3 @@
+This is a working test file.
+It has multiple lines.
+Perfect for testing AI notes generation!

@@ -1,0 +1,1198 @@
+{
+  "course_id": 51336,
+  "export_timestamp": "2025-09-13T13:20:43.957146",
+  "assignments": [],
+  "modules": [
+    {
+      "id": 354986,
+      "name": "Syllabus",
+      "position": 1,
+      "unlock_at": null,
+      "require_sequential_progress": false,
+      "requirement_type": "all",
+      "publish_final_grade": false,
+      "prerequisite_module_ids": [],
+      "state": "completed",
+      "completed_at": "2025-08-18T13:37:57Z",
+      "items_count": 5,
+      "items_url": "https://csueb.instructure.com/api/v1/courses/51336/modules/354986/items",
+      "items": [
+        {
+          "id": 2991934,
+          "title": "Syllabus",
+          "position": 1,
+          "indent": 0,
+          "quiz_lti": false,
+          "type": "Page",
+          "module_id": 354986,
+          "html_url": "https://csueb.instructure.com/courses/51336/modules/items/2991934",
+          "page_url": "syllabus",
+          "publish_at": null,
+          "url": "https://csueb.instructure.com/api/v1/courses/51336/pages/syllabus"
+        },
+        {
+          "id": 2991936,
+          "title": "University Policies (Common Syllabus Elements)",
+          "position": 2,
+          "indent": 0,
+          "quiz_lti": false,
+          "type": "Page",
+          "module_id": 354986,
+          "html_url": "https://csueb.instructure.com/courses/51336/modules/items/2991936",
+          "page_url": "university-policies-common-syllabus-elements",
+          "publish_at": null,
+          "url": "https://csueb.instructure.com/api/v1/courses/51336/pages/university-policies-common-syllabus-elements"
+        },
+        {
+          "id": 2991938,
+          "title": "University Resources",
+          "position": 3,
+          "indent": 0,
+          "quiz_lti": false,
+          "type": "ExternalUrl",
+          "module_id": 354986,
+          "html_url": "https://csueb.instructure.com/api/v1/courses/51336/module_item_redirect/2991938",
+          "external_url": "https://www.csueastbay.edu/online/classes-and-academic-support/index.html",
+          "new_tab": true
+        },
+        {
+          "id": 2991940,
+          "title": "Canvas Tutorials for Students",
+          "position": 4,
+          "indent": 0,
+          "quiz_lti": false,
+          "type": "Page",
+          "module_id": 354986,
+          "html_url": "https://csueb.instructure.com/courses/51336/modules/items/2991940",
+          "page_url": "canvas-tutorials-for-students",
+          "publish_at": null,
+          "url": "https://csueb.instructure.com/api/v1/courses/51336/pages/canvas-tutorials-for-students"
+        },
+        {
+          "id": 2991941,
+          "title": "Need Help with Canvas?",
+          "position": 5,
+          "indent": 0,
+          "quiz_lti": false,
+          "type": "Page",
+          "module_id": 354986,
+          "html_url": "https://csueb.instructure.com/courses/51336/modules/items/2991941",
+          "page_url": "need-help-with-canvas",
+          "publish_at": null,
+          "url": "https://csueb.instructure.com/api/v1/courses/51336/pages/need-help-with-canvas"
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "id": 93988,
+      "name": "Aryan .",
+      "created_at": "2024-03-15T18:56:15-07:00",
+      "sortable_name": "., Aryan",
+      "short_name": "Aryan .",
+      "enrollments": [
+        {
+          "id": 841861,
+          "user_id": 93988,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-08-25T23:10:40Z",
+          "updated_at": "2025-08-25T23:10:40Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/93988"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/93988"
+        }
+      ]
+    },
+    {
+      "id": 97777,
+      "name": "Sree Vardhan Reddy Aerva",
+      "created_at": "2024-05-03T18:06:40-07:00",
+      "sortable_name": "Aerva, Sree Vardhan Reddy",
+      "short_name": "Sree Vardhan Reddy Aerva",
+      "enrollments": [
+        {
+          "id": 770109,
+          "user_id": 97777,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-05-07T01:26:38Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/97777"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/97777"
+        }
+      ]
+    },
+    {
+      "id": 94540,
+      "name": "Imran Aziz",
+      "created_at": "2024-03-15T18:58:26-07:00",
+      "sortable_name": "Aziz, Imran",
+      "short_name": "Imran Aziz",
+      "enrollments": [
+        {
+          "id": 841853,
+          "user_id": 94540,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-08-25T23:10:37Z",
+          "updated_at": "2025-08-25T23:10:37Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/94540"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/94540"
+        }
+      ]
+    },
+    {
+      "id": 97958,
+      "name": "Siddhesh Bakre",
+      "created_at": "2024-05-07T18:04:19-07:00",
+      "sortable_name": "Bakre, Siddhesh",
+      "short_name": "Siddhesh Bakre",
+      "pronouns": "He/Him/His",
+      "enrollments": [
+        {
+          "id": 731627,
+          "user_id": 97958,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-04-07T06:15:56Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/97958"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/97958"
+        }
+      ]
+    },
+    {
+      "id": 97051,
+      "name": "Swaraj Bangar",
+      "created_at": "2024-04-29T18:09:28-07:00",
+      "sortable_name": "Bangar, Swaraj",
+      "short_name": "Swaraj Bangar",
+      "enrollments": [
+        {
+          "id": 762218,
+          "user_id": 97051,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-04-28T17:12:19Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/97051"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/97051"
+        }
+      ]
+    },
+    {
+      "id": 77688,
+      "name": "Divya Batthula",
+      "created_at": "2023-03-17T18:04:44-07:00",
+      "sortable_name": "Batthula, Divya",
+      "short_name": "Divya Batthula",
+      "pronouns": "She/Her/Hers",
+      "enrollments": [
+        {
+          "id": 758525,
+          "user_id": 77688,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-04-22T05:50:24Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/77688"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/77688"
+        }
+      ]
+    },
+    {
+      "id": 97323,
+      "name": "Aryan Jigneshbhai Bhagat",
+      "created_at": "2024-05-01T18:08:26-07:00",
+      "sortable_name": "Bhagat, Aryan Jigneshbhai",
+      "short_name": "Aryan Jigneshbhai Bhagat",
+      "pronouns": "he/him/his",
+      "enrollments": [
+        {
+          "id": 753219,
+          "user_id": 97323,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-04-15T21:26:37Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/97323"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/97323"
+        }
+      ]
+    },
+    {
+      "id": 97281,
+      "name": "Praveen Raju Bhandari",
+      "created_at": "2024-05-01T18:06:26-07:00",
+      "sortable_name": "Bhandari, Praveen Raju",
+      "short_name": "Praveen Raju Bhandari",
+      "enrollments": [
+        {
+          "id": 755841,
+          "user_id": 97281,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-04-19T20:21:42Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/97281"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/97281"
+        }
+      ]
+    },
+    {
+      "id": 96861,
+      "name": "Vedashree Vilas Bhat",
+      "created_at": "2024-04-26T18:04:54-07:00",
+      "sortable_name": "Bhat, Vedashree Vilas",
+      "short_name": "Vedashree Vilas Bhat",
+      "enrollments": [
+        {
+          "id": 751088,
+          "user_id": 96861,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-04-15T21:23:09Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/96861"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/96861"
+        }
+      ]
+    },
+    {
+      "id": 88630,
+      "name": "Eric Chhun",
+      "created_at": "2023-10-17T16:04:51-07:00",
+      "sortable_name": "Chhun, Eric",
+      "short_name": "Eric Chhun",
+      "enrollments": [
+        {
+          "id": 730791,
+          "user_id": 88630,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-04-07T06:15:24Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/88630"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/88630"
+        }
+      ]
+    },
+    {
+      "id": 95500,
+      "name": "Ashray Desai",
+      "created_at": "2024-04-01T18:05:01-07:00",
+      "sortable_name": "Desai, Ashray",
+      "short_name": "Ashray Desai",
+      "enrollments": [
+        {
+          "id": 776823,
+          "user_id": 95500,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-05-19T19:21:36Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/95500"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/95500"
+        }
+      ]
+    },
+    {
+      "id": 1617,
+      "name": "Babak Esmaeili",
+      "created_at": "2022-04-07T12:23:50-07:00",
+      "sortable_name": "Esmaeili, Babak",
+      "short_name": "Babak Esmaeili",
+      "enrollments": [
+        {
+          "id": 716779,
+          "user_id": 1617,
+          "course_id": 51336,
+          "type": "TeacherEnrollment",
+          "created_at": "2025-04-01T13:24:21Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": false,
+          "enrollment_state": "active",
+          "role": "TeacherEnrollment",
+          "role_id": 4,
+          "html_url": "https://csueb.instructure.com/courses/51336/users/1617"
+        }
+      ]
+    },
+    {
+      "id": 96598,
+      "name": "Niharika Naidu Immadi",
+      "created_at": "2024-04-22T18:06:23-07:00",
+      "sortable_name": "Immadi, Niharika Naidu",
+      "short_name": "Niharika Naidu Immadi",
+      "enrollments": [
+        {
+          "id": 744000,
+          "user_id": 96598,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-04-10T23:32:53Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/96598"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/96598"
+        }
+      ]
+    },
+    {
+      "id": 97858,
+      "name": "Siddhartha Inturu",
+      "created_at": "2024-05-06T18:05:12-07:00",
+      "sortable_name": "Inturu, Siddhartha",
+      "short_name": "Siddhartha Inturu",
+      "enrollments": [
+        {
+          "id": 841836,
+          "user_id": 97858,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-08-25T23:10:27Z",
+          "updated_at": "2025-08-25T23:10:27Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/97858"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/97858"
+        }
+      ]
+    },
+    {
+      "id": 96874,
+      "name": "Atharva Ashok Jadhav",
+      "created_at": "2024-04-26T18:05:59-07:00",
+      "sortable_name": "Jadhav, Atharva Ashok",
+      "short_name": "Atharva Ashok Jadhav",
+      "enrollments": [
+        {
+          "id": 754434,
+          "user_id": 96874,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-04-15T21:28:43Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/96874"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/96874"
+        }
+      ]
+    },
+    {
+      "id": 97097,
+      "name": "Saksham Jain",
+      "created_at": "2024-04-30T18:04:40-07:00",
+      "sortable_name": "Jain, Saksham",
+      "short_name": "Saksham Jain",
+      "enrollments": [
+        {
+          "id": 840275,
+          "user_id": 97097,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-08-22T13:12:24Z",
+          "updated_at": "2025-08-22T13:12:24Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/97097"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/97097"
+        }
+      ]
+    },
+    {
+      "id": 97813,
+      "name": "Sailesh Kumar Kishorekumar Lekha",
+      "created_at": "2024-05-03T18:09:11-07:00",
+      "sortable_name": "Kishorekumar Lekha, Sailesh Kumar",
+      "short_name": "Sailesh Kumar Kishorekumar Lekha",
+      "pronouns": "He/Him/His",
+      "enrollments": [
+        {
+          "id": 772727,
+          "user_id": 97813,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-05-12T22:23:09Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/97813"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/97813"
+        }
+      ]
+    },
+    {
+      "id": 98257,
+      "name": "Saisree Kota",
+      "created_at": "2024-05-13T18:10:29-07:00",
+      "sortable_name": "Kota, Saisree",
+      "short_name": "Saisree Kota",
+      "enrollments": [
+        {
+          "id": 834878,
+          "user_id": 98257,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-08-18T13:17:17Z",
+          "updated_at": "2025-08-18T13:17:17Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/98257"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/98257"
+        }
+      ]
+    },
+    {
+      "id": 94037,
+      "name": "Shreya Kumari",
+      "created_at": "2024-03-15T18:56:28-07:00",
+      "sortable_name": "Kumari, Shreya",
+      "short_name": "Shreya Kumari",
+      "pronouns": "She/Her/Hers",
+      "enrollments": [
+        {
+          "id": 756204,
+          "user_id": 94037,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-04-19T20:22:40Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/94037"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/94037"
+        }
+      ]
+    },
+    {
+      "id": 96183,
+      "name": "Aditi Naik",
+      "created_at": "2024-04-15T18:04:13-07:00",
+      "sortable_name": "Naik, Aditi",
+      "short_name": "Aditi Naik",
+      "enrollments": [
+        {
+          "id": 761824,
+          "user_id": 96183,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-04-27T13:12:52Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/96183"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/96183"
+        }
+      ]
+    },
+    {
+      "id": 94524,
+      "name": "Sri Vidya Rani Narala",
+      "created_at": "2024-03-15T18:58:23-07:00",
+      "sortable_name": "Narala, Sri Vidya Rani",
+      "short_name": "Sri Vidya Rani Narala",
+      "enrollments": [
+        {
+          "id": 731624,
+          "user_id": 94524,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-04-07T06:15:56Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/94524"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/94524"
+        }
+      ]
+    },
+    {
+      "id": 9590,
+      "name": "Daniel Ochoa Morales",
+      "created_at": "2022-04-07T12:30:59-07:00",
+      "sortable_name": "Ochoa Morales, Daniel",
+      "short_name": "Daniel Ochoa Morales",
+      "enrollments": [
+        {
+          "id": 779957,
+          "user_id": 9590,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-05-25T13:20:14Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/9590"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/9590"
+        }
+      ]
+    },
+    {
+      "id": 100139,
+      "name": "Ashish Padavala",
+      "created_at": "2024-07-05T18:06:09-07:00",
+      "sortable_name": "Padavala, Ashish",
+      "short_name": "Ashish Padavala",
+      "enrollments": [
+        {
+          "id": 776390,
+          "user_id": 100139,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-05-18T13:21:18Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/100139"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/100139"
+        }
+      ]
+    },
+    {
+      "id": 97725,
+      "name": "Manav Dimplekumar Patel",
+      "created_at": "2024-05-02T18:07:59-07:00",
+      "sortable_name": "Patel, Manav Dimplekumar",
+      "short_name": "Manav Dimplekumar Patel",
+      "enrollments": [
+        {
+          "id": 761188,
+          "user_id": 97725,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-04-25T19:12:38Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/97725"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/97725"
+        }
+      ]
+    },
+    {
+      "id": 96870,
+      "name": "Manthankumar Patel",
+      "created_at": "2024-04-26T18:05:52-07:00",
+      "sortable_name": "Patel, Manthankumar",
+      "short_name": "Manthankumar Patel",
+      "pronouns": "he/him/his",
+      "enrollments": [
+        {
+          "id": 841824,
+          "user_id": 96870,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-08-25T23:10:23Z",
+          "updated_at": "2025-08-25T23:10:23Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/96870"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/96870"
+        }
+      ]
+    },
+    {
+      "id": 98213,
+      "name": "Naman Rajani",
+      "created_at": "2024-05-13T18:07:08-07:00",
+      "sortable_name": "Rajani, Naman",
+      "short_name": "Naman Rajani",
+      "enrollments": [
+        {
+          "id": 760032,
+          "user_id": 98213,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-04-23T23:12:19Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/98213"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/98213"
+        }
+      ]
+    },
+    {
+      "id": 94960,
+      "name": "Kushal Reddy Reddipally",
+      "created_at": "2024-03-15T19:00:22-07:00",
+      "sortable_name": "Reddipally, Kushal Reddy",
+      "short_name": "Kushal Reddy Reddipally",
+      "enrollments": [
+        {
+          "id": 784538,
+          "user_id": 94960,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-05-27T23:18:46Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/94960"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/94960"
+        }
+      ]
+    },
+    {
+      "id": 97100,
+      "name": "Richa Nitin Sapre",
+      "created_at": "2024-04-30T18:04:57-07:00",
+      "sortable_name": "Sapre, Richa Nitin",
+      "short_name": "Richa Nitin Sapre",
+      "enrollments": [
+        {
+          "id": 752492,
+          "user_id": 97100,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-04-15T21:25:31Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/97100"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/97100"
+        }
+      ]
+    },
+    {
+      "id": 97233,
+      "name": "Moksha Shah",
+      "created_at": "2024-05-01T18:04:34-07:00",
+      "sortable_name": "Shah, Moksha",
+      "short_name": "Moksha Shah",
+      "enrollments": [
+        {
+          "id": 751295,
+          "user_id": 97233,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-04-15T21:23:29Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/97233"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/97233"
+        }
+      ]
+    },
+    {
+      "id": 95916,
+      "name": "Navdeep Singh",
+      "created_at": "2024-04-08T18:04:42-07:00",
+      "sortable_name": "Singh, Navdeep",
+      "short_name": "Navdeep Singh",
+      "enrollments": [
+        {
+          "id": 761612,
+          "user_id": 95916,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-04-26T01:12:20Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "last_activity_at": "2025-09-13T20:20:44Z",
+          "last_attended_at": null,
+          "total_activity_time": 1477,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/95916",
+            "current_grade": null,
+            "current_score": null,
+            "final_grade": null,
+            "final_score": null
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/95916"
+        }
+      ]
+    },
+    {
+      "id": 94331,
+      "name": "Jaidev Sai Sunkara",
+      "created_at": "2024-03-15T18:57:42-07:00",
+      "sortable_name": "Sunkara, Jaidev Sai",
+      "short_name": "Jaidev Sai Sunkara",
+      "pronouns": "He/Him/His",
+      "enrollments": [
+        {
+          "id": 741152,
+          "user_id": 94331,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-04-10T23:30:22Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/94331"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/94331"
+        }
+      ]
+    },
+    {
+      "id": 94069,
+      "name": "Zeel Thakker",
+      "created_at": "2024-03-15T18:56:35-07:00",
+      "sortable_name": "Thakker, Zeel",
+      "short_name": "Zeel Thakker",
+      "enrollments": [
+        {
+          "id": 761252,
+          "user_id": 94069,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-04-25T21:13:28Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/94069"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/94069"
+        }
+      ]
+    },
+    {
+      "id": 94511,
+      "name": "Akhil Naik Vadite",
+      "created_at": "2024-03-15T18:58:21-07:00",
+      "sortable_name": "Vadite, Akhil Naik",
+      "short_name": "Akhil Naik Vadite",
+      "pronouns": "He/Him/His",
+      "enrollments": [
+        {
+          "id": 773149,
+          "user_id": 94511,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-05-13T03:22:45Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/94511"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/94511"
+        }
+      ]
+    },
+    {
+      "id": 96189,
+      "name": "Venkata Sai Krishna Aditya Vatturi",
+      "created_at": "2024-04-15T18:04:28-07:00",
+      "sortable_name": "Vatturi, Venkata Sai Krishna Aditya",
+      "short_name": "Venkata Sai Krishna Aditya Vatturi",
+      "pronouns": "He/Him/His",
+      "enrollments": [
+        {
+          "id": 767447,
+          "user_id": 96189,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-05-06T03:19:11Z",
+          "updated_at": "2025-08-14T13:11:49Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/96189"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/96189"
+        }
+      ]
+    },
+    {
+      "id": 94935,
+      "name": "Mohana Sri Vamsy Yandamuri",
+      "created_at": "2024-03-15T19:00:14-07:00",
+      "sortable_name": "Yandamuri, Mohana Sri Vamsy",
+      "short_name": "Mohana Sri Vamsy Yandamuri",
+      "enrollments": [
+        {
+          "id": 831707,
+          "user_id": 94935,
+          "course_id": 51336,
+          "type": "StudentEnrollment",
+          "created_at": "2025-08-14T21:12:51Z",
+          "updated_at": "2025-09-02T19:11:22Z",
+          "associated_user_id": null,
+          "start_at": null,
+          "end_at": null,
+          "course_section_id": 49424,
+          "root_account_id": 1,
+          "limit_privileges_to_course_section": true,
+          "enrollment_state": "active",
+          "role": "StudentEnrollment",
+          "role_id": 3,
+          "grades": {
+            "html_url": "https://csueb.instructure.com/courses/51336/grades/94935"
+          },
+          "html_url": "https://csueb.instructure.com/courses/51336/users/94935"
+        }
+      ]
+    }
+  ],
+  "files": [],
+  "course_info": {
+    "id": 51336,
+    "name": "Cloud Computing (CS623-01-1, Fa25)",
+    "account_id": 148,
+    "uuid": "Ap7kPsgGqOdnd7NaCX3YdyHMpQrwWmLbmbnMFlio",
+    "start_at": null,
+    "grading_standard_id": 103,
+    "is_public": false,
+    "created_at": "2025-04-01T13:20:31Z",
+    "course_code": "2259-CS-623-01-1730-1",
+    "default_view": "modules",
+    "root_account_id": 1,
+    "enrollment_term_id": 263,
+    "license": "private",
+    "grade_passback_setting": null,
+    "end_at": null,
+    "public_syllabus": false,
+    "public_syllabus_to_auth": false,
+    "storage_quota_mb": 10485,
+    "is_public_to_auth_users": false,
+    "homeroom_course": false,
+    "course_color": null,
+    "friendly_name": null,
+    "apply_assignment_group_weights": false,
+    "calendar": {
+      "ics": "https://csueb.instructure.com/feeds/calendars/course_Ap7kPsgGqOdnd7NaCX3YdyHMpQrwWmLbmbnMFlio.ics"
+    },
+    "time_zone": "America/Los_Angeles",
+    "blueprint": false,
+    "template": false,
+    "enrollments": [
+      {
+        "type": "student",
+        "role": "StudentEnrollment",
+        "role_id": 3,
+        "user_id": 95916,
+        "enrollment_state": "active",
+        "limit_privileges_to_course_section": true
+      }
+    ],
+    "hide_final_grades": false,
+    "workflow_state": "available",
+    "course_format": "blended",
+    "restrict_enrollments_to_course_dates": false
+  }
+}
