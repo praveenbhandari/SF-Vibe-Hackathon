@@ -11,6 +11,8 @@ from datetime import datetime
 from .pdf_extractor import PDFExtractor
 from .doc_extractor import DOCExtractor
 from .youtube_extractor import YouTubeExtractor
+from .ppt_extractor import PPTExtractor
+from .txt_extractor import TXTExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,8 @@ class TextExtractionPipeline:
         self.pdf_extractor = PDFExtractor()
         self.doc_extractor = DOCExtractor()
         self.youtube_extractor = YouTubeExtractor()
+        self.ppt_extractor = PPTExtractor()
+        self.txt_extractor = TXTExtractor()
         
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
@@ -75,6 +79,10 @@ class TextExtractionPipeline:
                 result = self.pdf_extractor.extract_text(file_path)
             elif file_ext in ['.doc', '.docx']:
                 result = self.doc_extractor.extract_text(file_path)
+            elif file_ext in ['.pptx', '.ppsx']:
+                result = self.ppt_extractor.extract_text(file_path)
+            elif file_ext == '.txt':
+                result = self.txt_extractor.extract_text(file_path)
             else:
                 return {
                     'success': False,
@@ -157,7 +165,7 @@ class TextExtractionPipeline:
             file_path = os.path.join(directory_path, file)
             if os.path.isfile(file_path):
                 file_ext = os.path.splitext(file.lower())[1]
-                if file_ext in ['.pdf', '.doc', '.docx']:
+                if file_ext in ['.pdf', '.doc', '.docx', '.pptx', '.ppsx', '.txt']:
                     supported_files.append(file_path)
         
         logger.info(f"Found {len(supported_files)} supported files in {directory_path}")
@@ -235,6 +243,8 @@ class TextExtractionPipeline:
         return {
             'pdf': self.pdf_extractor.supported_extensions,
             'doc': self.doc_extractor.supported_extensions,
+            'ppt': self.ppt_extractor.supported_extensions,
+            'txt': self.txt_extractor.supported_extensions,
             'youtube': ['video_url', 'playlist_url']
         }
     

@@ -30,21 +30,34 @@ import sys
 
 from canvas_client import CanvasClient
 from canvas_config import CanvasConfig
-
-# Add MESA-Hackathon modules to path
-sys.path.append(str(Path(__file__).parent / "MESA-Hackathon-main" / "src"))
-
-# Import MESA-Hackathon components
+# Add navdeep modules to path
+# Import navdeep components
+NAVDEEP_AVAILABLE = False
 try:
+    # Add navdeep src directory to Python path
+    navdeep_src_path = '/Users/praveenbhandari/sf-vibe/navdeep/src'
+    if navdeep_src_path not in sys.path:
+        sys.path.insert(0, navdeep_src_path)
+    
+    # Import navdeep components
     from pipelines.text_extraction_pipeline import TextExtractionPipeline
     from utils.ingest import ingest_documents
     from utils.retrieval import mmr_retrieve
     from utils.rag_llm import answer_with_context
     from utils.notes import generate_notes_from_text, iter_generate_notes_from_texts
-    MESA_AVAILABLE = True
+    
+    # If we get here, all imports succeeded
+    NAVDEEP_AVAILABLE = True
+    print("✅ navdeep components loaded successfully")
 except ImportError as e:
-    MESA_AVAILABLE = False
-    st.warning(f"MESA-Hackathon components not available: {e}")
+    print(f"❌ navdeep components not available: {e}")
+    # Set globals to None for safety
+    TextExtractionPipeline = None
+    ingest_documents = None
+    mmr_retrieve = None
+    answer_with_context = None
+    generate_notes_from_text = None
+    iter_generate_notes_from_texts = None
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -412,6 +425,14 @@ class CanvasCourseExplorer:
             st.session_state.selected_course = None
         if 'course_data' not in st.session_state:
             st.session_state.course_data = {}
+        if 'client' not in st.session_state:
+            st.session_state.client = None
+        # For backward compatibility, also set canvas_client
+        if 'canvas_client' not in st.session_state:
+            st.session_state.canvas_client = None
+        # Sync canvas_client with client when client is available
+        if st.session_state.client and not st.session_state.canvas_client:
+            st.session_state.canvas_client = st.session_state.client
     
     def render_header(self):
         """Render the main header"""
@@ -428,6 +449,13 @@ class CanvasCourseExplorer:
             if st.session_state.user_info:
                 st.sidebar.write(f"**User:** {st.session_state.user_info.get('name', 'Unknown')}")
                 st.sidebar.write(f"**ID:** {st.session_state.user_info.get('id', 'Unknown')}")
+            
+            # Navdeep status indicator
+            st.sidebar.markdown("---")
+            if NAVDEEP_AVAILABLE:
+                st.sidebar.success("🤖 AI Components: Available")
+            else:
+                st.sidebar.error("🤖 AI Components: Not Available")
             
             if st.sidebar.button("🚪 Logout", type="secondary"):
                 self.logout()
@@ -492,6 +520,7 @@ class CanvasCourseExplorer:
                 st.session_state.authenticated = True
                 st.session_state.user_info = user_info
                 st.session_state.client = self.client
+                st.session_state.canvas_client = self.client  # For backward compatibility
                 
                 st.success(f"✅ Successfully authenticated as {user_info.get('name')}")
                 st.rerun()
@@ -508,6 +537,7 @@ class CanvasCourseExplorer:
         st.session_state.selected_course = None
         st.session_state.course_data = {}
         st.session_state.client = None
+        st.session_state.canvas_client = None  # For backward compatibility
         st.rerun()
     
     def load_courses(self):
@@ -816,17 +846,23 @@ class CanvasCourseExplorer:
                                 try:
                                     file_id = item.get('content_id')
                                     if st.button("📥 Download", key=f"download_module_{file_id}"):
-                                        with st.spinner("Downloading file..."):
-                                            file_content, filename, content_type = st.session_state.client.download_file_content(file_id)
-                                            st.download_button(
-                                                label="📥 Click to save file",
-                                                data=file_content,
-                                                file_name=filename,
-                                                mime=content_type,
-                                                key=f"save_module_{file_id}"
-                                            )
+                                         with st.spinner("Downloading file..."):
+                                             try:
+                                                 if not st.session_state.get('client'):
+                                                     st.error("Canvas client not available. Please log in again.")
+                                                     return
+                                                 file_content, filename, content_type = st.session_state.client.download_file_content(file_id)
+                                                 st.download_button(
+                                                     label="📥 Click to save file",
+                                                     data=file_content,
+                                                     file_name=filename,
+                                                     mime=content_type,
+                                                     key=f"save_module_{file_id}"
+                                                 )
+                                             except Exception as e:
+                                                 st.write("❌ Download unavailable")
                                 except Exception as e:
-                                     st.write("❌ Download unavailable")
+                                    st.write("❌ Download unavailable")
     
     def render_files_section(self):
         """Render course files section with download functionality"""
@@ -894,6 +930,9 @@ class CanvasCourseExplorer:
                             if file_id:
                                 if st.button("📥 Download", key=f"download_file_{file_id}"):
                                     with st.spinner("Downloading file..."):
+                                        if not st.session_state.get('client'):
+                                            st.error("Canvas client not available. Please log in again.")
+                                            return
                                         file_content, filename, content_type = st.session_state.client.download_file_content(file_id)
                                         st.download_button(
                                             label="📥 Click to save file",
@@ -1324,109 +1363,194 @@ class CanvasCourseExplorer:
             st.error(f"❌ Export failed: {str(e)}")
     
     def render_ai_notes_section(self):
-        """Render AI Notes section with MESA-Hackathon integration"""
+        """Render AI Notes section with course file selection and AI processing"""
         st.header("🤖 AI-Powered Note Generation")
         
-        if not MESA_AVAILABLE:
-            st.error("❌ MESA-Hackathon components are not available. Please ensure the MESA-Hackathon-main folder is properly integrated.")
-            return
-        
-        # Check for downloaded course files
-        course_id = st.session_state.selected_course['id']
-        course_name = st.session_state.selected_course['name']
-        
-        # Look for course files in downloads directory
-        course_pattern = f"course_{course_id}_*"
-        course_dirs = list(self.download_dir.glob(course_pattern))
-        
-        if not course_dirs:
-            st.warning("⚠️ No downloaded course files found. Please download course files first using the Download tab.")
+        if not NAVDEEP_AVAILABLE:
+            st.error("❌ navdeep components are not available. Please ensure the navdeep folder is properly integrated.")
+            st.info("💡 To fix this issue:")
+            st.markdown("""
+            1. Ensure the navdeep folder exists at `/Users/praveenbhandari/sf-vibe/navdeep/`
+            2. Install required dependencies: `pip install PyPDF2 python-docx faiss-cpu sentence-transformers numpy openai youtube-transcript-api`
+            3. Restart the Streamlit app
+            """)
             
-            # Provide quick download option
-            if st.button("📥 Quick Download Course Files"):
-                st.info("Redirecting to Download tab...")
+            # Try to re-import navdeep components
+            if st.button("🔄 Try to reload navdeep components"):
                 st.rerun()
             return
         
-        # Course file selection
-        st.subheader("📁 Select Course Files for Note Generation")
+        # Initialize session state for AI notes
+        if 'ai_notes_cache' not in st.session_state:
+            st.session_state.ai_notes_cache = {}
+        if 'selected_file_for_ai' not in st.session_state:
+            st.session_state.selected_file_for_ai = None
         
-        selected_course_dir = st.selectbox(
-            "Choose course directory:",
-            course_dirs,
-            format_func=lambda x: x.name
-        )
+        # Two-column layout
+        col1, col2 = st.columns([1, 2])
         
-        if selected_course_dir:
-            # Find all text-based files
-            supported_extensions = ['.pdf', '.docx', '.doc', '.txt']
-            all_files = []
+        with col1:
+            st.subheader("📁 Course Files")
+            self.render_course_file_selector()
+        
+        with col2:
+             st.subheader("🤖 AI Processing")
+             self.render_ai_processing_panel()
+    
+    def render_course_file_selector(self):
+        """Render course file selector from downloads folder"""
+        downloads_dir = os.path.join(os.path.dirname(__file__), 'downloads')
+        
+        if not os.path.exists(downloads_dir):
+            st.warning("📁 No downloads folder found. Please download some course files first.")
+            return
+        
+        # Get all course folders
+        course_folders = [f for f in os.listdir(downloads_dir) 
+                         if os.path.isdir(os.path.join(downloads_dir, f))]
+        
+        if not course_folders:
+            st.warning("📁 No course folders found in downloads.")
+            return
+        
+        # Course selection with expandable view
+        for course_folder in course_folders:
+            course_path = os.path.join(downloads_dir, course_folder)
             
-            for ext in supported_extensions:
-                all_files.extend(selected_course_dir.rglob(f'*{ext}'))
+            with st.expander(f"📚 {course_folder}", expanded=False):
+                # Get files in this course folder
+                try:
+                    files = [f for f in os.listdir(course_path) 
+                            if os.path.isfile(os.path.join(course_path, f))]
+                    
+                    if files:
+                        for file_name in sorted(files):
+                            file_path = os.path.join(course_path, file_name)
+                            
+                            # File selection button
+                            if st.button(f"📄 {file_name}", key=f"select_{course_folder}_{file_name}"):
+                                st.session_state.selected_file_for_ai = {
+                                    'course': course_folder,
+                                    'file_name': file_name,
+                                    'file_path': file_path
+                                }
+                                st.rerun()
+                    else:
+                        st.write("No files found in this course.")
+                        
+                except Exception as e:
+                    st.error(f"Error reading course folder: {e}")
+        
+        # Show currently selected file
+        if st.session_state.selected_file_for_ai:
+            selected = st.session_state.selected_file_for_ai
+            st.success(f"✅ Selected: {selected['file_name']}")
+            st.caption(f"From: {selected['course']}")
+    
+    def render_ai_processing_panel(self):
+        """Render AI processing panel with caching"""
+        if not st.session_state.selected_file_for_ai:
+            st.info("👈 Please select a file from the course list to generate AI notes.")
+            return
+        
+        selected_file = st.session_state.selected_file_for_ai
+        file_key = f"{selected_file['course']}_{selected_file['file_name']}"
+        
+        # Show selected file info
+        st.write(f"**Selected File:** {selected_file['file_name']}")
+        st.write(f"**Course:** {selected_file['course']}")
+        
+        # Check if notes are cached
+        cached_notes = st.session_state.ai_notes_cache.get(file_key)
+        
+        if cached_notes:
+            st.success("💾 Cached notes found!")
             
-            if not all_files:
-                st.warning("No supported files found in the selected course directory.")
-                return
+            # Option to regenerate
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                if st.button("🔄 Regenerate Notes", type="secondary"):
+                    self.generate_ai_notes(selected_file, file_key, force_regenerate=True)
+            with col2:
+                if st.button("🗑️ Clear Cache", type="secondary"):
+                    if file_key in st.session_state.ai_notes_cache:
+                        del st.session_state.ai_notes_cache[file_key]
+                    st.rerun()
             
-            # File selection
-            selected_files = st.multiselect(
-                "Select files to process:",
-                all_files,
-                format_func=lambda x: f"{x.parent.name}/{x.name}"
-            )
+            # Display cached notes
+            st.markdown("### 📝 Generated Notes")
+            st.markdown(cached_notes)
             
-            if selected_files:
-                # AI Settings
-                st.subheader("⚙️ AI Settings")
+        else:
+            st.info("🤖 No cached notes found for this file.")
+            
+            # Generate new notes
+            if st.button("✨ Generate AI Notes", type="primary"):
+                self.generate_ai_notes(selected_file, file_key)
+    
+    def generate_ai_notes(self, selected_file, file_key, force_regenerate=False):
+        """Generate AI notes for the selected file"""
+        try:
+            with st.spinner("🤖 Generating AI notes..."):
+                file_path = selected_file['file_path']
                 
-                col1, col2 = st.columns(2)
-                with col1:
-                    embed_model = st.text_input("Embedding model", value="all-MiniLM-L6-v2")
-                    top_k = st.number_input("Top K", min_value=1, max_value=20, value=5)
-                
-                with col2:
-                    backend = st.selectbox("LLM Backend", options=["groq (OpenAI-compatible)", "openai", "ollama"], index=0)
-                    notes_title = st.text_input("Notes Title (optional)", value=f"{course_name} - AI Generated Notes")
-                
-                # Backend-specific settings
-                if backend.startswith("groq"):
-                    st.caption("Uses GROQ_API_KEY from environment")
-                    groq_key = st.text_input("GROQ_API_KEY (optional)", type="password")
-                    groq_model = st.text_input("GROQ_MODEL (optional)", value=os.getenv("GROQ_MODEL", ""))
+                # Extract text from file
+                if TextExtractionPipeline:
+                    pipeline = TextExtractionPipeline()
+                    result = pipeline.extract_from_file(file_path)
                     
-                    if groq_key:
-                        os.environ["GROQ_API_KEY"] = groq_key
-                    if groq_model:
-                        os.environ["GROQ_MODEL"] = groq_model
-                    os.environ["LLM_BACKEND"] = "groq"
-                    
-                elif backend == "openai":
-                    st.caption("Uses OPENAI_API_KEY from environment")
-                    openai_key = st.text_input("OPENAI_API_KEY (optional)", type="password")
-                    openai_model = st.text_input("OPENAI_MODEL", value=os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
-                    
-                    if openai_key:
-                        os.environ["OPENAI_API_KEY"] = openai_key
-                    if openai_model:
-                        os.environ["OPENAI_MODEL"] = openai_model
-                    os.environ["LLM_BACKEND"] = "openai"
-                    
+                    if result.get('success') and result.get('full_text'):
+                        extracted_text = result['full_text']
+                        # Generate notes using navdeep
+                        if generate_notes_from_text:
+                            notes = generate_notes_from_text(extracted_text)
+                            
+                            # Cache the notes
+                            st.session_state.ai_notes_cache[file_key] = notes
+                            
+                            st.success("✅ Notes generated successfully!")
+                            st.rerun()
+                        else:
+                            st.error("❌ Note generation function not available.")
+                    else:
+                        error_msg = result.get('error', 'Unknown error')
+                        
+                        # Enhanced logging for debugging
+                        logger.error(f"Text extraction failed for {file_path}: {error_msg}")
+                        logger.error(f"Full extraction result: {result}")
+                        
+                        # Categorize and provide specific error messages
+                        if 'EOF marker not found' in error_msg or 'PdfReadError' in error_msg:
+                            st.error(f"❌ Could not extract text from the file: PDF file is corrupted or has formatting issues")
+                            st.warning("💡 This PDF file appears to be corrupted or has formatting issues. Try with a different PDF file.")
+                        elif 'permission' in error_msg.lower() or 'denied' in error_msg.lower():
+                            st.error(f"❌ Could not extract text from the file: Permission denied")
+                            st.warning("💡 Permission denied. Make sure the file is not password-protected or in use by another application.")
+                        elif 'not found' in error_msg.lower() or 'FileNotFoundError' in error_msg:
+                            st.error(f"❌ Could not extract text from the file: File not found")
+                            st.warning("💡 File not found. Please make sure the file exists and try again.")
+                        elif 'Unsupported file type' in error_msg:
+                            st.error(f"❌ Could not extract text from the file: Unsupported file format")
+                            st.warning("💡 This file format is not supported. Try with TXT, PDF, DOCX, or PPTX files.")
+                        elif 'password' in error_msg.lower() or 'encrypted' in error_msg.lower():
+                            st.error(f"❌ Could not extract text from the file: Password-protected file")
+                            st.warning("💡 This file is password-protected. Please remove the password protection and try again.")
+                        elif 'empty' in error_msg.lower() or 'no text' in error_msg.lower():
+                            st.error(f"❌ Could not extract text from the file: No readable text found")
+                            st.warning("💡 This file appears to contain no readable text. It might be an image-based PDF or empty document.")
+                        else:
+                            # Improved fallback with debugging info
+                            st.error(f"❌ Could not extract text from the file: {error_msg}")
+                            st.warning("💡 Try with a different file format (TXT, DOCX, or another PDF).")
+                            # Show debug info in expander for troubleshooting
+                            with st.expander("🔍 Debug Information", expanded=False):
+                                st.code(f"Error details: {error_msg}\nFile: {file_path}\nResult: {result}")
                 else:
-                    st.caption("Requires local ollama service")
-                    os.environ["LLM_BACKEND"] = "ollama"
-                
-                # Processing options
-                st.subheader("📝 Processing Options")
-                col1, col2 = st.columns(2)
-                with col1:
-                    chunk_size = st.number_input("Chunk size", min_value=400, max_value=4000, value=1200, step=100)
-                with col2:
-                    group_size = st.number_input("Chunks per group", min_value=1, max_value=10, value=3)
-                
-                # Process files
-                if st.button("🚀 Generate AI Notes", type="primary"):
-                    self.process_files_for_notes(selected_files, notes_title, embed_model, top_k, chunk_size, group_size)
+                    st.error("❌ Text extraction pipeline not available.")
+                    
+        except Exception as e:
+            st.error(f"❌ Error generating notes: {str(e)}")
+
     
     def process_files_for_notes(self, files: List[Path], title: str, embed_model: str, top_k: int, chunk_size: int, group_size: int):
         """Process selected files and generate AI notes"""
@@ -1447,8 +1571,24 @@ class CanvasCourseExplorer:
                         result = pipe.extract_from_file(str(file_path))
                         if result.get('success'):
                             extraction_results.append(result)
+                        else:
+                            error_msg = result.get('error', 'Unknown error')
+                            
+                            # Enhanced error categorization for batch processing
+                            if 'EOF marker not found' in error_msg or 'PdfReadError' in error_msg:
+                                st.warning(f"⚠️ Skipping {file_path.name}: PDF file is corrupted or has formatting issues")
+                            elif 'permission' in error_msg.lower() or 'denied' in error_msg.lower():
+                                st.warning(f"⚠️ Skipping {file_path.name}: Permission denied (file may be password-protected)")
+                            elif 'Unsupported file type' in error_msg:
+                                st.warning(f"⚠️ Skipping {file_path.name}: Unsupported file format")
+                            elif 'password' in error_msg.lower() or 'encrypted' in error_msg.lower():
+                                st.warning(f"⚠️ Skipping {file_path.name}: Password-protected file")
+                            elif 'empty' in error_msg.lower() or 'no text' in error_msg.lower():
+                                st.warning(f"⚠️ Skipping {file_path.name}: No readable text found")
+                            else:
+                                st.warning(f"⚠️ Failed to extract from {file_path.name}: {error_msg}")
                     except Exception as e:
-                        st.warning(f"Failed to extract from {file_path.name}: {e}")
+                        st.warning(f"⚠️ Failed to extract from {file_path.name}: {e}")
                     
                     progress_bar.progress((i + 1) / len(files))
                 
@@ -1467,8 +1607,8 @@ class CanvasCourseExplorer:
                 # Get all text chunks from the extraction results
                 all_texts = []
                 for result in extraction_results:
-                    if 'text' in result:
-                        all_texts.append(result['text'])
+                    if 'full_text' in result:
+                        all_texts.append(result['full_text'])
                 
                 if all_texts:
                     # Generate notes section by section
@@ -1541,7 +1681,7 @@ class CanvasCourseExplorer:
         total_files = 0
         for course_dir in course_dirs:
             # Count supported files
-            supported_extensions = ['.pdf', '.docx', '.doc', '.txt']
+            supported_extensions = ['.pdf', '.docx', '.doc', '.txt', '.pptx', '.ppsx']
             for ext in supported_extensions:
                 total_files += len(list(course_dir.rglob(f'*{ext}')))
         
@@ -1551,15 +1691,53 @@ class CanvasCourseExplorer:
             'file_count': total_files
         }
     
+    def check_downloads_folder_availability(self) -> Dict[str, Any]:
+        """Check if files are available in the main downloads folder"""
+        downloads_path = Path("/Users/praveenbhandari/sf-vibe/downloads")
+        
+        if not downloads_path.exists():
+            return {
+                'available': False,
+                'directories': [],
+                'file_count': 0
+            }
+        
+        # Find all course directories in downloads
+        course_dirs = [d for d in downloads_path.iterdir() if d.is_dir()]
+        
+        if not course_dirs:
+            return {
+                'available': False,
+                'directories': [],
+                'file_count': 0
+            }
+        
+        total_files = 0
+        for course_dir in course_dirs:
+            # Count supported files
+            supported_extensions = ['.pdf', '.docx', '.doc', '.txt', '.pptx', '.ppsx']
+            for ext in supported_extensions:
+                total_files += len(list(course_dir.rglob(f'*{ext}')))
+        
+        return {
+            'available': total_files > 0,
+            'directories': course_dirs,
+            'file_count': total_files
+        }
+    
     def render_enhanced_download_section(self):
         """Enhanced download section with file availability checking"""
         st.header("📥 Course File Downloads")
         
+        if not st.session_state.get('selected_course'):
+            st.warning("⚠️ Please select a course first.")
+            return
+            
         course_id = st.session_state.selected_course['id']
         course_name = st.session_state.selected_course['name']
         
-        # Check file availability
-        file_status = self.check_course_files_availability(course_id)
+        # Check file availability in downloads folder
+        file_status = self.check_downloads_folder_availability()
         
         # Status display
         col1, col2, col3 = st.columns(3)
@@ -1582,7 +1760,7 @@ class CanvasCourseExplorer:
             for course_dir in file_status['directories']:
                 with st.expander(f"📂 {course_dir.name}", expanded=False):
                     # Show directory contents
-                    supported_extensions = ['.pdf', '.docx', '.doc', '.txt']
+                    supported_extensions = ['.pdf', '.docx', '.doc', '.txt', '.pptx', '.ppsx']
                     files_found = []
                     
                     for ext in supported_extensions:
@@ -1618,11 +1796,27 @@ class CanvasCourseExplorer:
         if not file_status['available']:
             st.info("💡 **Recommended**: Download course files to enable AI note generation and offline access.")
         
+        # Check if canvas_client is available for new downloads
+        if not st.session_state.get('canvas_client'):
+            st.warning("⚠️ Please log in first to enable new file downloads.")
+            if file_status['available']:
+                st.info("✅ You can still use the existing files above for AI note generation.")
+            return
+        
         # Initialize downloader
         if 'downloader' not in st.session_state:
+            # Get API token from canvas client if available
+            api_token = None
+            base_url = None
+            if hasattr(st.session_state, 'canvas_client') and st.session_state.canvas_client:
+                api_token = getattr(st.session_state.canvas_client, '_Canvas__requester', {}).get('access_token')
+                base_url = getattr(st.session_state.canvas_client, 'base_url', None)
+            
             st.session_state.downloader = CanvasFileDownloader(
-                canvas_client=st.session_state.canvas_client,
-                download_dir=self.download_dir
+                api_token=api_token,
+                base_url=base_url,
+                output_dir=str(self.download_dir),
+                dry_run=False
             )
         
         downloader = st.session_state.downloader
@@ -1710,6 +1904,9 @@ class CanvasCourseExplorer:
                         status_text.text("📚 Processing module content...")
                         try:
                             # Get modules
+                            if not st.session_state.get('canvas_client'):
+                                st.error("Canvas client not available. Please log in again.")
+                                return
                             modules = list(st.session_state.canvas_client.get_course(course['id']).get_modules())
                             
                             for i, module in enumerate(modules):
