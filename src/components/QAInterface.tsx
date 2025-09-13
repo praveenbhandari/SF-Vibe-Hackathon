@@ -71,8 +71,7 @@ What would you like to know?`,
     try {
       const answer = await aiNotesService.answerQuestion(
         userMessage.content,
-        currentNotes.content,
-        currentNotes.fileName
+        currentNotes.content
       );
 
       const assistantMessage: Message = {

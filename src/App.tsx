@@ -3,12 +3,14 @@ import { useCanvasStore, TabType } from './store/useCanvasStore';
 import CanvasAuth from './components/CanvasAuth';
 import CourseSelection from './components/CourseSelection';
 import FileBrowser from './components/FileBrowser';
+import AssignmentsTab from './components/AssignmentsTab';
+import ModulesTab from './components/ModulesTab';
 import AINotesGenerator from './components/AINotesGenerator';
 import QAInterface from './components/QAInterface';
 import AINotesTab from './components/AINotesTab';
 import {
   GraduationCap, FileText, Brain, MessageCircle,
-  LogOut, Settings, User, Download
+  LogOut, Settings, User, Download, BookOpen, Layers
 } from 'lucide-react';
 
 function App() {
@@ -68,6 +70,22 @@ function App() {
       disabled: !selectedCourse
     },
     {
+      id: 'assignments' as TabType,
+      label: 'Assignments',
+      icon: BookOpen,
+      active: activeTab === 'assignments',
+      onClick: () => setActiveTab('assignments'),
+      disabled: !selectedCourse
+    },
+    {
+      id: 'modules' as TabType,
+      label: 'Modules',
+      icon: Layers,
+      active: activeTab === 'modules',
+      onClick: () => setActiveTab('modules'),
+      disabled: !selectedCourse
+    },
+    {
       id: 'ai-notes' as TabType,
       label: 'AI Notes',
       icon: Download,
@@ -101,6 +119,10 @@ function App() {
         return <CourseSelection />;
       case 'files':
         return <FileBrowser />;
+      case 'assignments':
+        return <AssignmentsTab />;
+      case 'modules':
+        return <ModulesTab />;
       case 'ai-notes':
         return <AINotesTab />;
       case 'notes':

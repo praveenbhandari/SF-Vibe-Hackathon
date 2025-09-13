@@ -37,7 +37,7 @@ const FileBrowser: React.FC = () => {
     }
   }, [selectedCourse]);
 
-  const loadFiles = async () => {
+  const loadFiles = async (retryCount = 0) => {
     if (!selectedCourse) return;
     
     setLoading(true);
@@ -48,7 +48,19 @@ const FileBrowser: React.FC = () => {
       setFiles(fetchedFiles);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to load files';
-      setError(errorMessage);
+      
+      // Check if it's a permission error and provide helpful guidance
+      if (errorMessage.includes('Permission Error') || errorMessage.includes('permission_denied')) {
+        setError(`${errorMessage}\n\nTip: Try refreshing your Canvas credentials or contact your instructor if you're a student.`);
+      } else if (errorMessage.includes('Authentication Error') || errorMessage.includes('unauthorized')) {
+        setError(`${errorMessage}\n\nPlease update your Canvas API token in the settings.`);
+      } else if (retryCount < 2) {
+        // Retry for network errors
+        setTimeout(() => loadFiles(retryCount + 1), 1000 * (retryCount + 1));
+        return;
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setLoading(false);
     }

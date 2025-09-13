@@ -1,84 +1,63 @@
 import React, { useState, useEffect } from 'react';
-import { useCanvasStore, DownloadedFile } from '../store/useCanvasStore';
-import { canvasApi } from '../services/canvasApi';
-import { FileText, Download, Brain, RefreshCw, FolderOpen, AlertCircle } from 'lucide-react';
+import { useCanvasStore } from '../store/useCanvasStore';
+import {
+  FileText, Download, Brain, Clock, Search,
+  FolderOpen, File, AlertCircle
+} from 'lucide-react';
+
+interface DownloadedFile {
+  name: string;
+  path: string;
+  size: number;
+  modified: Date;
+  type: string;
+  course?: string;
+}
 
 const AINotesTab: React.FC = () => {
-  const { downloadedFiles, setDownloadedFiles, setSelectedFile, setActiveTab } = useCanvasStore();
+  const { 
+    downloadedFiles, 
+    addDownloadedFile, 
+    setSelectedFile, 
+    setActiveTab,
+    selectedFile 
+  } = useCanvasStore();
+  const [localFiles, setLocalFiles] = useState<DownloadedFile[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedFile, setSelectedFileLocal] = useState<DownloadedFile | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Load downloaded files from the downloads folder
-  const loadDownloadedFiles = async () => {
-    setIsLoading(true);
-    try {
-      const files = await canvasApi.getDownloadedFiles();
-      setDownloadedFiles(files);
-    } catch (error) {
-      console.error('Error loading downloaded files:', error);
-      // Fallback to mock data if backend is not available
-      const mockFiles: DownloadedFile[] = [
-        {
-          id: '1',
-          name: 'lecture-1.pdf',
-          path: '/downloads/course_123/lecture-1.pdf',
-          course: 'Advanced Algorithms',
-          size: 2048576,
-          type: 'application/pdf',
-          lastModified: '2024-01-15T10:30:00Z'
-        },
-        {
-          id: '2',
-          name: 'assignment-1.docx',
-          path: '/downloads/course_123/assignment-1.docx',
-          course: 'Advanced Algorithms',
-          size: 1024000,
-          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          lastModified: '2024-01-14T15:45:00Z'
-        },
-        {
-          id: '3',
-          name: 'notes.txt',
-          path: '/downloads/course_123/notes.txt',
-          course: 'Advanced Algorithms',
-          size: 512000,
-          type: 'text/plain',
-          lastModified: '2024-01-13T09:20:00Z'
-        }
-      ];
-      setDownloadedFiles(mockFiles);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
+  // Load files from downloads folder and subfolders
   useEffect(() => {
     loadDownloadedFiles();
   }, []);
 
-  const handleFileSelect = (file: DownloadedFile) => {
-    setSelectedFileLocal(file);
-    // Convert DownloadedFile to FileItem format for compatibility
-    const fileItem = {
-      id: parseInt(file.id),
-      uuid: file.id,
-      folder_id: 0,
-      display_name: file.name,
-      filename: file.name,
-      content_type: file.type,
-      url: file.path,
-      size: file.size,
-      created_at: file.lastModified,
-      updated_at: file.lastModified,
-      locked: false,
-      hidden: false,
-      hidden_for_user: false,
-      modified_at: file.lastModified,
-      mime_class: file.type.split('/')[0],
-      locked_for_user: false
-    };
-    setSelectedFile(fileItem);
-    setActiveTab('notes');
+  const loadDownloadedFiles = async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      // Fetch files from backend API - specifically from /Users/praveenbhandari/sf-vibe/downloads
+      const response = await fetch('/api/files/downloads');
+      if (response.ok) {
+        const files = await response.json();
+        // Filter and organize files from the downloads folder
+        const processedFiles = files.map((file: any) => ({
+          ...file,
+          modified: new Date(file.modified),
+          // Ensure course name is properly formatted
+          course: file.course || 'Uncategorized'
+        }));
+        setLocalFiles(processedFiles);
+      } else {
+        setError('Failed to load files from downloads folder');
+      }
+    } catch (err) {
+      setError('Failed to connect to file service');
+      console.error('Error loading files:', err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const formatFileSize = (bytes: number): string => {
@@ -89,143 +68,221 @@ const AINotesTab: React.FC = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const getFileIcon = (type: string): string => {
-    if (type.includes('pdf')) return '📄';
-    if (type.includes('image')) return '🖼️';
-    if (type.includes('video')) return '🎥';
-    if (type.includes('audio')) return '🎵';
-    if (type.includes('text')) return '📝';
-    if (type.includes('spreadsheet') || type.includes('excel')) return '📊';
-    if (type.includes('presentation') || type.includes('powerpoint')) return '📈';
-    if (type.includes('word') || type.includes('document')) return '📄';
-    if (type.includes('zip') || type.includes('archive')) return '📦';
-    return '📁';
+  const getFileIcon = (type: string) => {
+    if (type.includes('pdf')) return <FileText className="w-5 h-5 text-red-500" />;
+    if (type.includes('word') || type.includes('document')) return <FileText className="w-5 h-5 text-blue-500" />;
+    if (type.includes('text')) return <File className="w-5 h-5 text-gray-500" />;
+    return <File className="w-5 h-5 text-gray-400" />;
   };
 
-  const groupFilesByCourse = (files: DownloadedFile[]) => {
-    const grouped: { [key: string]: DownloadedFile[] } = {};
-    files.forEach(file => {
-      if (!grouped[file.course]) {
-        grouped[file.course] = [];
+  const filteredFiles = localFiles.filter(file =>
+    file.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (file.course && file.course.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
+
+  // Group files by course
+  const filesByCourse = filteredFiles.reduce((acc, file) => {
+    const course = file.course || 'Uncategorized';
+    if (!acc[course]) {
+      acc[course] = [];
+    }
+    acc[course].push(file);
+    return acc;
+  }, {} as Record<string, DownloadedFile[]>);
+
+  const courses = Object.keys(filesByCourse).sort();
+
+  const handleGenerateNotes = (file: DownloadedFile) => {
+    try {
+      console.log('Generating notes for file:', file);
+      
+      // Check if setSelectedFile is available
+      if (!setSelectedFile) {
+        console.error('setSelectedFile is not available from store');
+        setError('Store function not available. Please refresh the page.');
+        return;
       }
-      grouped[file.course].push(file);
-    });
-    return grouped;
+      
+      // Convert local file to FileItem format for compatibility
+      const fileItem = {
+        id: Date.now(), // Generate a temporary ID
+        uuid: `local-${Date.now()}`,
+        folder_id: 0,
+        display_name: file.name,
+        filename: file.name,
+        content_type: file.type,
+        url: file.path,
+        size: file.size,
+        created_at: file.modified.toISOString(),
+        updated_at: file.modified.toISOString(),
+        locked: false,
+        hidden: false,
+        hidden_for_user: false,
+        modified_at: file.modified.toISOString(),
+        mime_class: file.type.split('/')[0],
+        locked_for_user: false
+      };
+      
+      console.log('Setting selected file:', fileItem);
+      console.log('setSelectedFile function:', setSelectedFile);
+      
+      // Call setSelectedFile with proper error handling
+      try {
+        setSelectedFile(fileItem);
+        console.log('Successfully set selected file');
+      } catch (storeError) {
+        console.error('Error calling setSelectedFile:', storeError);
+        setError('Failed to set selected file. Please try again.');
+        return;
+      }
+      
+      setActiveTab('notes');
+    } catch (error) {
+      console.error('Error in handleGenerateNotes:', error);
+      setError('Failed to generate notes. Please try again.');
+    }
   };
 
-  const groupedFiles = groupFilesByCourse(downloadedFiles);
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading downloaded files...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">AI Notes</h1>
-            <p className="mt-2 text-gray-600">
-              Select downloaded files to generate AI-powered notes and summaries
-            </p>
+    <div className="max-w-6xl mx-auto p-6">
+      {/* Header */}
+      <div className="mb-6">
+        <div className="flex items-center space-x-3 mb-2">
+          <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+            <Brain className="w-5 h-5 text-purple-600" />
           </div>
-          <button
-            onClick={loadDownloadedFiles}
-            disabled={isLoading}
-            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-            <span>Refresh Files</span>
-          </button>
+          <h1 className="text-2xl font-bold text-gray-900">AI Notes</h1>
+        </div>
+        <p className="text-gray-600">
+          Generate AI-powered notes from files in your downloads folder. Each subfolder appears as a separate course for easy organization.
+        </p>
+      </div>
+
+      {/* Search */}
+      <div className="mb-6">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+          <input
+            type="text"
+            placeholder="Search files in downloads folder..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
         </div>
       </div>
 
-      {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <div className="flex items-center space-x-3">
-            <RefreshCw className="w-6 h-6 animate-spin text-blue-600" />
-            <span className="text-gray-600">Loading downloaded files...</span>
-          </div>
-        </div>
-      ) : downloadedFiles.length === 0 ? (
-        <div className="text-center py-12">
-          <FolderOpen className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No Downloaded Files</h3>
-          <p className="text-gray-600 mb-6">
-            Download some course files first to generate AI notes
-          </p>
+      {/* Error State */}
+      {error && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center space-x-2">
+          <AlertCircle className="w-5 h-5 text-red-500" />
+          <span className="text-red-700">{error}</span>
           <button
-            onClick={() => setActiveTab('files')}
-            className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            onClick={loadDownloadedFiles}
+            className="ml-auto text-red-600 hover:text-red-700 font-medium"
           >
-            <Download className="w-4 h-4" />
-            <span>Go to Files Tab</span>
+            Retry
           </button>
+        </div>
+      )}
+
+      {/* Files by Course */}
+      {filteredFiles.length === 0 ? (
+        <div className="text-center py-12">
+          <FolderOpen className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">
+            {searchTerm ? 'No files found' : 'No files in downloads folder'}
+          </h3>
+          <p className="text-gray-600 mb-4">
+            {searchTerm 
+              ? 'Try adjusting your search terms'
+              : 'Add files to your downloads folder to get started with AI note generation. Each subfolder will appear as a separate course.'
+            }
+          </p>
+          {!searchTerm && (
+            <button
+              onClick={() => setActiveTab('files')}
+              className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Download className="w-4 h-4" />
+              <span>Browse Canvas Files</span>
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-8">
-          {Object.entries(groupedFiles).map(([courseName, files]) => (
-            <div key={courseName} className="bg-white rounded-lg shadow-sm border border-gray-200">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-xl font-semibold text-gray-900">{courseName}</h2>
-                <p className="text-sm text-gray-600">{files.length} files available</p>
+          {courses.map((course) => (
+            <div key={course} className="bg-white border border-gray-200 rounded-lg p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <FolderOpen className="w-5 h-5 text-blue-600" />
+                </div>
+                <h2 className="text-lg font-semibold text-gray-900">{course}</h2>
+                <span className="text-sm text-gray-500">({filesByCourse[course].length} files)</span>
               </div>
               
-              <div className="p-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {files.map((file) => (
-                    <div
-                      key={file.id}
-                      className={`p-4 border rounded-lg cursor-pointer transition-all duration-200 hover:shadow-md ${
-                        selectedFile?.id === file.id
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                      onClick={() => handleFileSelect(file)}
-                    >
-                      <div className="flex items-start space-x-3">
-                        <div className="text-2xl">{getFileIcon(file.type)}</div>
-                        <div className="flex-1 min-w-0">
-                          <h3 className="text-sm font-medium text-gray-900 truncate">
-                            {file.name}
-                          </h3>
-                          <p className="text-xs text-gray-500 mt-1">
-                            {formatFileSize(file.size)}
-                          </p>
-                          <p className="text-xs text-gray-400 mt-1">
-                            {new Date(file.lastModified).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <div className="flex-shrink-0">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleFileSelect(file);
-                            }}
-                            className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
-                            title="Generate AI Notes"
-                          >
-                            <Brain className="w-4 h-4" />
-                          </button>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filesByCourse[course].map((file, index) => (
+                  <div
+                    key={`${course}-${index}`}
+                    className="bg-gray-50 border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex items-start space-x-3">
+                      <div className="flex-shrink-0">
+                        {getFileIcon(file.type)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-sm font-medium text-gray-900 truncate" title={file.name}>
+                          {file.name}
+                        </h3>
+                        <div className="mt-1 flex items-center space-x-4 text-xs text-gray-500">
+                          <span>{formatFileSize(file.size)}</span>
+                          <div className="flex items-center space-x-1">
+                            <Clock className="w-3 h-3" />
+                            <span>{file.modified.toLocaleDateString()}</span>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  ))}
-                </div>
+                    
+                    <div className="mt-4">
+                      <button
+                        onClick={() => handleGenerateNotes(file)}
+                        className="w-full flex items-center justify-center space-x-2 px-3 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition-colors"
+                      >
+                        <Brain className="w-4 h-4" />
+                        <span>Generate AI Notes</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {selectedFile && (
-        <div className="mt-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <div className="flex items-center space-x-3">
-            <Brain className="w-5 h-5 text-blue-600" />
-            <div>
-              <p className="text-sm font-medium text-blue-900">
-                Selected: {selectedFile.name}
-              </p>
-              <p className="text-xs text-blue-700">
-                Click "Generate Notes" tab to create AI notes for this file
-              </p>
-            </div>
+      {/* Stats */}
+      {filteredFiles.length > 0 && (
+        <div className="mt-8 p-4 bg-gray-50 rounded-lg">
+          <div className="flex items-center justify-between text-sm text-gray-600">
+            <span>
+              {filteredFiles.length} file{filteredFiles.length !== 1 ? 's' : ''} available
+            </span>
+            <span>
+              Total size: {formatFileSize(filteredFiles.reduce((sum, file) => sum + file.size, 0))}
+            </span>
           </div>
         </div>
       )}

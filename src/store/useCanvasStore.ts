@@ -1,18 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type TabType = 'auth' | 'courses' | 'files' | 'ai-notes' | 'notes' | 'qa';
-
-export interface DownloadedFile {
-  id: string;
-  name: string;
-  path: string;
-  course: string;
-  size: number;
-  type: string;
-  lastModified: string;
-}
-
 export interface Course {
   id: number;
   name: string;
@@ -145,6 +133,50 @@ export interface Assignment {
   can_submit: boolean;
 }
 
+export interface ModuleItem {
+  id: number;
+  module_id: number;
+  position: number;
+  title: string;
+  indent: number;
+  type: string;
+  content_id?: number;
+  html_url?: string;
+  url?: string;
+  page_url?: string;
+  external_url?: string;
+  new_tab?: boolean;
+  completion_requirement?: {
+    type: string;
+    min_score?: number;
+    completed?: boolean;
+  };
+  content_details?: {
+    points_possible?: number;
+    due_at?: string;
+    unlock_at?: string;
+    lock_at?: string;
+  };
+  published?: boolean;
+}
+
+export interface Module {
+  id: number;
+  workflow_state: string;
+  position: number;
+  name: string;
+  unlock_at?: string;
+  require_sequential_progress: boolean;
+  prerequisite_module_ids: number[];
+  items_count: number;
+  items_url: string;
+  items?: ModuleItem[];
+  state?: string;
+  completed_at?: string;
+  publish_final_grade?: boolean;
+  published?: boolean;
+}
+
 export interface GeneratedNotes {
   id: string;
   fileName: string;
@@ -158,6 +190,7 @@ export interface GeneratedNotes {
   extractedText?: string;
 }
 
+export type TabType = 'courses' | 'files' | 'assignments' | 'modules' | 'ai-notes' | 'notes' | 'qa';
 
 interface CanvasState {
   // Authentication
@@ -177,10 +210,13 @@ interface CanvasState {
   // Assignments
   assignments: Assignment[];
   
+  // Modules
+  modules: Module[];
+  
   // AI Notes
   generatedNotes: GeneratedNotes[];
   currentNotes: GeneratedNotes | null;
-  downloadedFiles: DownloadedFile[];
+  downloadedFiles: FileItem[];
   
   // UI State
   activeTab: TabType;
@@ -195,10 +231,11 @@ interface CanvasState {
   setFiles: (files: FileItem[]) => void;
   setSelectedFile: (file: FileItem | null) => void;
   setAssignments: (assignments: Assignment[]) => void;
+  setModules: (modules: Module[]) => void;
   addGeneratedNotes: (notes: GeneratedNotes) => void;
   setCurrentNotes: (notes: GeneratedNotes | null) => void;
-  setDownloadedFiles: (files: DownloadedFile[]) => void;
-  addDownloadedFile: (file: DownloadedFile) => void;
+  setDownloadedFiles: (files: FileItem[]) => void;
+  addDownloadedFile: (file: FileItem) => void;
   setActiveTab: (tab: TabType) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
@@ -218,6 +255,7 @@ export const useCanvasStore = create<CanvasState>()(
       files: [],
       selectedFile: null,
       assignments: [],
+      modules: [],
       generatedNotes: [],
       currentNotes: null,
       downloadedFiles: [],
@@ -264,7 +302,8 @@ export const useCanvasStore = create<CanvasState>()(
           selectedCourse: course,
           files: [],
           selectedFile: null,
-          assignments: []
+          assignments: [],
+          modules: []
         });
       },
       
@@ -273,11 +312,15 @@ export const useCanvasStore = create<CanvasState>()(
       },
       
       setSelectedFile: (file: FileItem | null) => {
-        set({ selectedFile });
+        set({ selectedFile: file });
       },
       
       setAssignments: (assignments: Assignment[]) => {
         set({ assignments, error: null });
+      },
+      
+      setModules: (modules: Module[]) => {
+        set({ modules, error: null });
       },
       
       addGeneratedNotes: (notes: GeneratedNotes) => {
@@ -293,11 +336,11 @@ export const useCanvasStore = create<CanvasState>()(
         set({ currentNotes: notes });
       },
       
-      setDownloadedFiles: (files: DownloadedFile[]) => {
+      setDownloadedFiles: (files: FileItem[]) => {
         set({ downloadedFiles: files });
       },
       
-      addDownloadedFile: (file: DownloadedFile) => {
+      addDownloadedFile: (file: FileItem) => {
         const { downloadedFiles } = get();
         const exists = downloadedFiles.find(f => f.id === file.id);
         if (!exists) {

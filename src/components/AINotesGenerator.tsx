@@ -52,12 +52,7 @@ const AINotesGenerator: React.FC = () => {
       setProgress('Generating AI notes...');
 
       // Generate notes using AI
-      const notes = await aiNotesService.generateNotes(
-        text,
-        selectedFile.display_name,
-        selectedCourse.id,
-        selectedCourse.name
-      );
+      const notes = await aiNotesService.generateNotes([selectedFile]);
 
       addGeneratedNotes(notes);
       setCurrentNotes(notes);

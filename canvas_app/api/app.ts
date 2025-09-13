@@ -4,6 +4,7 @@ import dotenv from 'dotenv'
 import authRoutes from './routes/auth.js'
 import canvasRoutes from './routes/canvas.js'
 import aiRoutes from './routes/ai.js'
+import filesRoutes from './routes/files.js'
 
 // Load environment variables
 dotenv.config()
@@ -25,6 +26,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 app.use('/api/auth', authRoutes)
 app.use('/api/canvas', canvasRoutes)
 app.use('/api/ai', aiRoutes)
+app.use('/api/files', filesRoutes)
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -47,6 +49,7 @@ app.get('/api', (req, res) => {
       auth: '/api/auth',
       canvas: '/api/canvas',
       ai: '/api/ai',
+      files: '/api/files',
       health: '/health'
     }
   })

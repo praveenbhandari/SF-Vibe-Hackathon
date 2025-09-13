@@ -1,5 +1,12 @@
 import { Course, FileItem, Assignment } from '../store/useCanvasStore';
 
+interface ApiResponse {
+  success: boolean;
+  error_type?: string;
+  error?: string;
+  files?: FileItem[];
+}
+
 class CanvasApiService {
   private baseUrl: string = '';
   private apiToken: string = '';
@@ -70,76 +77,30 @@ class CanvasApiService {
 
   async getCourseFiles(courseId: number): Promise<FileItem[]> {
     try {
-      const response = await this.makeBackendRequest(
-        `/api/canvas/files?baseUrl=${encodeURIComponent(this.baseUrl)}&apiToken=${encodeURIComponent(this.apiToken)}&courseId=${courseId}`
-      );
-      
-      if (!response.success) {
-        // Handle specific error types
-        if (response.error_type === 'permission_denied') {
-          throw new Error(`Access forbidden - Your Canvas API token doesn't have permission to access files in this course. Please check that your token has the 'Files' permission scope enabled, or contact your Canvas administrator for assistance.`);
-        } else if (response.error_type === 'authentication') {
-          throw new Error(`Authentication failed - Your Canvas API token may have expired or is invalid. Please try generating a new token.`);
-        } else if (response.error_type === 'not_found') {
-          throw new Error(`Course not found - Course ${courseId} doesn't exist or you don't have access to it.`);
-        }
-        
-        throw new Error(response.error || 'Failed to fetch course files');
-      }
-      
-      return response.files || [];
+      const response = await this.makeBackendRequest(`/api/canvas/courses/${courseId}/files`);
+      return response.data;
     } catch (error) {
-      console.error('Error fetching course files:', error);
-      
-      // If it's already a formatted error, re-throw it
-      if (error instanceof Error && (error.message.includes('Access forbidden') || error.message.includes('Authentication failed'))) {
-        throw error;
+      if (error instanceof Error && error.message.includes('permission_denied')) {
+        throw new Error(
+          `Canvas API Permission Error: Your API token lacks the required 'Files' permission scope for course ${courseId}. \n\nTo fix this:\n1. Go to Canvas → Account → Settings → Approved Integrations\n2. Generate a new token with 'Files' scope enabled\n3. Update your token in the application settings\n\nIf you're a student, contact your instructor for file access.`
+        );
       }
-      
-      throw new Error(`Failed to fetch course files: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      if (error instanceof Error && error.message.includes('unauthorized')) {
+        throw new Error(
+          `Canvas API Authentication Error: Your API token is invalid or expired. Please check your Canvas API token and try again.`
+        );
+      }
+      console.error('Error fetching course files:', error);
+      throw new Error(`Failed to load course files: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
   async getCourseAssignments(courseId: number): Promise<Assignment[]> {
     try {
-      const response = await this.makeBackendRequest<any>('/api/canvas/assignments', {
-        method: 'POST',
-        body: JSON.stringify({
-          baseUrl: this.baseUrl,
-          apiToken: this.apiToken,
-          courseId: courseId
-        })
-      });
-      return response.data || [];
+      // For now, return empty array as assignments are not implemented in backend
+      return [];
     } catch (error) {
       throw new Error('Failed to fetch assignments: ' + (error as Error).message);
-    }
-  }
-
-  async getCourseModules(courseId: number): Promise<any[]> {
-    try {
-      const response = await this.makeBackendRequest<any>('/api/canvas/modules', {
-        method: 'POST',
-        body: JSON.stringify({
-          baseUrl: this.baseUrl,
-          apiToken: this.apiToken,
-          courseId: courseId
-        })
-      });
-      return response.data || [];
-    } catch (error) {
-      throw new Error('Failed to fetch modules: ' + (error as Error).message);
-    }
-  }
-
-  async getDownloadedFiles(): Promise<any[]> {
-    try {
-      const response = await this.makeBackendRequest<any>('/api/files/downloaded', {
-        method: 'GET'
-      });
-      return response.files || [];
-    } catch (error) {
-      throw new Error('Failed to fetch downloaded files: ' + (error as Error).message);
     }
   }
 
@@ -158,6 +119,25 @@ class CanvasApiService {
       return await response.blob();
     } catch (error) {
       throw new Error('Failed to download file: ' + (error as Error).message);
+    }
+  }
+
+  async getCourseModules(courseId: string): Promise<any[]> {
+    try {
+      console.log(`Fetching modules for course ${courseId}`);
+      const response = await this.makeBackendRequest(`/courses/${courseId}/modules?include[]=items`);
+      const modules = await response.json();
+      console.log(`Successfully fetched ${modules.length} modules`);
+      return modules;
+    } catch (error) {
+      console.error('Error fetching course modules:', error);
+      if (error instanceof Error && error.message.includes('permission_denied')) {
+        throw new Error('Access forbidden - insufficient permissions. Your Canvas API token may not have the required \'Modules\' permission scope, or you may not have access to modules in this course. Please check your token permissions or contact your Canvas administrator.');
+      }
+      if (error instanceof Error && error.message.includes('unauthorized')) {
+        throw new Error('Authentication failed. Please check your Canvas API token and ensure it is valid and has not expired.');
+      }
+      throw error;
     }
   }
 
