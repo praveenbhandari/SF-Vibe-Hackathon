@@ -573,6 +573,113 @@ class CanvasClient:
         except requests.exceptions.RequestException as e:
             logger.error(f"Error downloading file {file_id}: {e}")
             raise CanvasAPIError(f"Failed to download file: {e}")
+    
+    def export_course_data(self, course_id: int, include_files: bool = True) -> Dict[str, Any]:
+        """Export comprehensive course data to JSON format
+        
+        Args:
+            course_id: Canvas course ID
+            include_files: Whether to include file information
+            
+        Returns:
+            Dictionary containing all course data
+        """
+        logger.info(f"Starting comprehensive export for course {course_id}")
+        
+        course_data = {
+            'course_id': course_id,
+            'export_timestamp': datetime.now().isoformat(),
+            'assignments': [],
+            'modules': [],
+            'users': [],
+            'files': [],
+            'course_info': None
+        }
+        
+        try:
+            # Get course information
+            logger.info("Fetching course information...")
+            course_info = self._make_request('GET', f'/api/v1/courses/{course_id}')
+            course_data['course_info'] = course_info
+            
+            # Get assignments
+            logger.info("Fetching assignments...")
+            assignments = self.get_course_assignments(course_id, include_submissions=True)
+            course_data['assignments'] = assignments
+            
+            # Get modules with items
+            logger.info("Fetching modules...")
+            modules = self.get_course_modules(course_id, include_items=True)
+            course_data['modules'] = modules
+            
+            # Get users
+            logger.info("Fetching users...")
+            users = self.get_course_users(course_id)
+            course_data['users'] = users
+            
+            # Get files if requested
+            if include_files:
+                logger.info("Fetching files...")
+                try:
+                    files = self.get_course_files(course_id)
+                    course_data['files'] = files
+                except CanvasAPIError as e:
+                    logger.warning(f"Could not fetch files: {e}")
+                    course_data['files'] = []
+            
+            logger.info(f"Export completed for course {course_id}")
+            return course_data
+            
+        except Exception as e:
+            logger.error(f"Error exporting course {course_id}: {e}")
+            raise CanvasAPIError(f"Failed to export course data: {e}")
+    
+    def export_all_courses_data(self, include_files: bool = True, output_dir: str = None) -> Dict[str, str]:
+        """Export data for all accessible courses
+        
+        Args:
+            include_files: Whether to include file information
+            output_dir: Directory to save JSON files (optional)
+            
+        Returns:
+            Dictionary mapping course_id to export data or file path
+        """
+        logger.info("Starting export for all courses")
+        
+        # Get all courses
+        courses = self.get_courses()
+        exported_courses = {}
+        
+        for course in courses:
+            course_id = course['id']
+            course_name = course.get('name', f'Course_{course_id}')
+            
+            try:
+                logger.info(f"Exporting course: {course_name} (ID: {course_id})")
+                course_data = self.export_course_data(course_id, include_files)
+                
+                if output_dir:
+                    # Save to file
+                    os.makedirs(output_dir, exist_ok=True)
+                    safe_name = "".join(c for c in course_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+                    filename = f"course_{course_id}_{safe_name}.json"
+                    filepath = os.path.join(output_dir, filename)
+                    
+                    with open(filepath, 'w', encoding='utf-8') as f:
+                        json.dump(course_data, f, indent=2, ensure_ascii=False)
+                    
+                    exported_courses[str(course_id)] = filepath
+                    logger.info(f"Saved course data to: {filepath}")
+                else:
+                    # Return data directly
+                    exported_courses[str(course_id)] = course_data
+                
+            except Exception as e:
+                logger.error(f"Failed to export course {course_id} ({course_name}): {e}")
+                exported_courses[str(course_id)] = f"Error: {e}"
+        
+        logger.info(f"Completed export for {len(courses)} courses")
+        return exported_courses
 
 if __name__ == "__main__":
     # Example usage
