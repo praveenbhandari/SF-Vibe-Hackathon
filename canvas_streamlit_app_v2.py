@@ -645,6 +645,45 @@ class CanvasCourseExplorer:
         else:
             st.info("Click 'Refresh Courses' to load your courses")
     
+    def render_workflow_status(self):
+        """Render workflow progress indicator"""
+        st.markdown("""
+        <div style="
+            background: linear-gradient(90deg, #f8f9fa 0%, #e9ecef 100%);
+            padding: 1.5rem;
+            border-radius: 10px;
+            margin-bottom: 1.5rem;
+            border-left: 4px solid #28a745;
+        ">
+            <h4 style="margin: 0 0 1rem 0; color: #495057;">📋 Workflow Progress</h4>
+        """, unsafe_allow_html=True)
+        
+        # Check workflow status
+        course = st.session_state.selected_course
+        download_path = f"/Users/praveenbhandari/sf-vibe/downloads/{course.get('name', '').replace(' ', '_').replace('/', '_')}"
+        files_exist = os.path.exists(download_path) and len(os.listdir(download_path)) > 0
+        
+        # Progress steps
+        steps = [
+            ("✅", "Login to Canvas", "Completed", "#28a745"),
+            ("✅", "Select Course", "Completed", "#28a745"),
+            ("✅" if files_exist else "⏳", "Download Files", "Completed" if files_exist else "Pending", "#28a745" if files_exist else "#ffc107"),
+            ("📝", "Generate AI Notes", "Available", "#17a2b8")
+        ]
+        
+        cols = st.columns(4)
+        for i, (icon, title, status, color) in enumerate(steps):
+            with cols[i]:
+                st.markdown(f"""
+                <div style="text-align: center; padding: 1rem;">
+                    <div style="font-size: 2rem; margin-bottom: 0.5rem;">{icon}</div>
+                    <div style="font-weight: 600; color: {color}; margin-bottom: 0.25rem;">{title}</div>
+                    <div style="font-size: 0.8rem; color: #6c757d;">{status}</div>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        st.markdown("</div>", unsafe_allow_html=True)
+    
     def render_course_overview(self):
         """Render course overview and statistics"""
         if not st.session_state.selected_course:
