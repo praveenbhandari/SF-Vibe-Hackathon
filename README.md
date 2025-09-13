@@ -1,162 +1,203 @@
-# Canvas API Python Client
+# Canvas LMS Course Explorer
 
-A comprehensive Python application for retrieving and exporting data from Canvas LMS using the Canvas API.
+A comprehensive Streamlit web application for accessing and downloading content from Canvas LMS courses.
 
 ## Features
 
-- **Authentication**: Secure Canvas API token management
-- **Data Retrieval**: Fetch courses, assignments, grades, users, and submissions
-- **Export Formats**: Export data to CSV, JSON, and Excel formats
-- **CLI Interface**: Easy-to-use command-line interface
-- **Rate Limiting**: Built-in rate limiting and retry logic
-- **Caching**: Intelligent caching for improved performance
-- **Analytics**: Course and assignment analytics
+- 🔐 **Secure Authentication**: Login with Canvas API token
+- 📚 **Course Selection**: Browse and select from your available courses
+- 📄 **Page Access**: Direct links to Canvas pages and content
+- 📁 **File Download**: Access to downloadable files and resources
+- 📊 **Data Export**: Export course data (assignments, modules, users) to JSON/CSV
+- 🎨 **Modern UI**: Clean, responsive web interface
+- 📈 **Progress Tracking**: Real-time status updates
 
-## Installation
+## Quick Start
 
-1. Clone or download this repository
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+### 1. Install Dependencies
 
-## Configuration
-
-### Canvas API Token
-
-1. Log into your Canvas account
-2. Go to Account → Settings → Approved Integrations
-3. Click "+ New Access Token"
-4. Generate a new token and copy it
-
-### Environment Setup
-
-Create a `.env` file in the project directory:
-
-```env
-CANVAS_API_TOKEN=your_canvas_api_token_here
-CANVAS_BASE_URL=https://your-institution.instructure.com
+```bash
+pip install -r requirements.txt
 ```
+
+### 2. Run the App
+
+```bash
+python run_app_v2.py
+```
+
+Or directly with Streamlit:
+
+```bash
+streamlit run canvas_streamlit_app_v2.py
+```
+
+### 3. Open in Browser
+
+The app will automatically open at: http://localhost:8502
 
 ## Usage
 
-### Command Line Interface
+### 1. Login
+- Enter your Canvas URL (e.g., https://your-school.instructure.com)
+- Enter your Canvas API token
+- Click "Login"
 
-Run the CLI application:
+### 2. Select Course
+- Click "Refresh Courses" to load your courses
+- Select a course from the dropdown
 
-```bash
-python canvas_cli.py
-```
+### 3. Access Content
+- **View Assignments**: Browse course assignments with details
+- **Explore Modules**: Access course modules and their content
+- **Check Users**: View enrolled users in the course
+- **Export Data**: Download course data as JSON or CSV
 
-### Available Commands
+### 4. Download Files
+- Use the generated HTML files for direct file access:
+  - `canvas_files_download.html` - Direct download links for files
+  - `canvas_page_links.html` - Direct links to Canvas pages
 
-1. **Authentication Test**
-   - Test your Canvas API connection
+## Getting Your Canvas API Token
 
-2. **Retrieve Courses**
-   - Fetch all courses you have access to
-   - Export to CSV, JSON, or Excel
+1. Log into your Canvas account
+2. Go to **Account** → **Settings**
+3. Scroll down to **Approved Integrations**
+4. Click **+ New Access Token**
+5. Give it a name and generate the token
+6. Copy the token and use it in the app
 
-3. **Retrieve Assignments**
-   - Fetch assignments for specific courses
-   - Filter by course ID
+## File Access Methods
 
-4. **Retrieve Grades**
-   - Get grade information
-   - Export grade summaries
+### Method 1: Direct File Downloads
+- Open `canvas_files_download.html` in your browser
+- Click download links for PDFs and other files
+- Files download directly to your computer
 
-5. **Course Analytics**
-   - Generate course statistics and analytics
+### Method 2: Canvas Page Access
+- Open `canvas_page_links.html` in your browser
+- Click "View Page" to access Canvas pages
+- Use browser's "Print to PDF" to save content
 
-6. **Search Functionality**
-   - Search courses and assignments
+### Method 3: Streamlit App
+- Use the web interface to browse and export data
+- Access assignments, modules, and user information
+- Export data in various formats
 
-### Python API Usage
-
-```python
-from canvas_client import CanvasClient
-from canvas_data_services import CanvasDataServices
-from canvas_export import CanvasExporter
-
-# Initialize client
-client = CanvasClient(
-    base_url="https://your-institution.instructure.com",
-    access_token="your_token_here"
-)
-
-# Initialize services
-data_services = CanvasDataServices(client)
-exporter = CanvasExporter()
-
-# Get courses
-courses = data_services.get_courses_with_details()
-
-# Export to CSV
-exporter.export_to_csv(courses, "courses.csv")
-
-# Get assignments for a course
-assignments = data_services.get_assignments_with_details(course_id=12345)
-
-# Export to Excel
-exporter.export_to_excel(assignments, "assignments.xlsx")
-```
-
-## File Structure
+## Project Structure
 
 ```
-canvas-api-client/
-├── canvas_client.py          # Main Canvas API client
-├── canvas_data_services.py   # Data retrieval services
-├── canvas_export.py          # Export functionality
-├── canvas_cli.py             # Command-line interface
-├── requirements.txt          # Python dependencies
-├── README.md                 # This file
-└── .env                      # Environment configuration (create this)
+sf-vibe/
+├── canvas_streamlit_app_v2.py    # Main Streamlit application
+├── canvas_client.py              # Canvas API client
+├── canvas_config.py              # Configuration management
+├── run_app_v2.py                 # App launcher
+├── canvas_files_download.html    # File download links
+├── canvas_page_links.html        # Page access links
+├── requirements.txt              # Python dependencies
+└── README.md                     # This file
 ```
 
-## API Rate Limiting
+## Features in Detail
 
-The application includes built-in rate limiting to respect Canvas API limits:
-- Default: 10 requests per second
-- Automatic retry with exponential backoff
-- Configurable rate limits
+### Authentication
+- Secure token-based authentication
+- Automatic credential validation
+- Session management with keyring storage
 
-## Error Handling
+### Course Management
+- Real-time course loading
+- Course selection interface
+- Course information display
 
-- Comprehensive error handling for API failures
-- Automatic retry for transient errors
-- Detailed logging for debugging
+### Content Access
+- **Assignments**: View, filter, and sort assignments
+- **Modules**: Browse course modules and content
+- **Users**: See enrolled users and their information
+- **Files**: Access downloadable files and resources
 
-## Security
+### Data Export
+- Export assignments to JSON/CSV
+- Export modules to JSON/CSV
+- Export users to JSON/CSV
+- Download all course data at once
 
-- API tokens are stored securely in environment variables
-- No hardcoded credentials in source code
-- Secure token validation
+### File Management
+- Direct download links for files
+- Page access links for Canvas content
+- Organized HTML interfaces
+- Progress tracking
+
+## Technical Details
+
+### Built With
+- **Streamlit**: Web application framework
+- **Canvas API**: Canvas LMS integration
+- **Python**: Core programming language
+- **Pandas**: Data processing and export
+- **BeautifulSoup**: HTML parsing
+
+### Architecture
+- Modular design with separate classes
+- Session state management
+- Error handling and logging
+- Responsive UI components
+- Rate limiting and retry logic
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Invalid Token Error**
-   - Verify your Canvas API token is correct
-   - Check that the token has appropriate permissions
+1. **Authentication Failed**
+   - Check your Canvas URL format
+   - Verify your API token is correct
+   - Ensure you have proper permissions
 
-2. **Connection Errors**
-   - Verify your Canvas base URL is correct
-   - Check your internet connection
+2. **No Content Found**
+   - Check if the course has content
+   - Verify you have access to course materials
+   - Contact your instructor if needed
 
 3. **Permission Errors**
-   - Ensure your Canvas account has access to the requested data
-   - Some data may require instructor or admin privileges
+   - Some content may require special permissions
+   - Use the HTML files for direct access
+   - Contact your Canvas administrator
 
-### Logging
+### Getting Help
 
-The application logs important events and errors. Check the console output for detailed information about API calls and any issues.
+- Check the app's built-in help sections
+- Review error messages for specific issues
+- Use the generated HTML files for direct access
+- Contact your Canvas administrator for permission issues
 
-## Contributing
+## Development
 
-Feel free to submit issues and enhancement requests!
+### Running in Development
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run with auto-reload
+streamlit run canvas_streamlit_app_v2.py --server.runOnSave true
+```
+
+### Key Components
+
+- **CanvasClient**: Handles all Canvas API interactions
+- **CanvasConfig**: Manages configuration and credentials
+- **StreamlitApp**: Main web interface
+- **HTML Generators**: Create direct access links
 
 ## License
 
-This project is provided as-is for educational and administrative purposes.
+This project is for educational and personal use. Please respect your institution's terms of service and copyright policies when accessing course materials.
+
+## Support
+
+For issues and questions:
+1. Check this README
+2. Review error messages in the app
+3. Use the generated HTML files for direct access
+4. Check Canvas API documentation
+5. Contact your Canvas administrator

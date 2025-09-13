@@ -122,6 +122,9 @@ class CanvasClient:
         # Set session timeout
         self.session.timeout = timeout
         
+        # Initialize rate limiting
+        self.last_request_time = 0
+        
         # Validate configuration
         self._validate_config()
     
@@ -445,6 +448,131 @@ class CanvasClient:
         except Exception as e:
             logger.error(f"Error retrieving grades for course {course_id}: {e}")
             raise CanvasAPIError(f"Failed to retrieve grades: {e}")
+    
+    def get_course_modules(self, course_id: int, include_items: bool = True) -> List[Dict]:
+        """Retrieve modules for a specific course"""
+        params = {
+            'per_page': 100
+        }
+        
+        if include_items:
+            params['include[]'] = ['items']
+        
+        modules = []
+        page = 1
+        
+        while True:
+            params['page'] = page
+            response = self._make_request('GET', f'/api/v1/courses/{course_id}/modules', params=params)
+            
+            if not response:
+                break
+            
+            modules.extend(response)
+            
+            if len(response) < 100:
+                break
+            
+            page += 1
+        
+        logger.info(f"Retrieved {len(modules)} modules for course {course_id}")
+        return modules
+    
+    def get_module_items(self, course_id: int, module_id: int) -> List[Dict]:
+        """Retrieve items for a specific module"""
+        params = {
+            'per_page': 100,
+            'include[]': ['content_details']
+        }
+        
+        items = []
+        page = 1
+        
+        while True:
+            params['page'] = page
+            response = self._make_request('GET', f'/api/v1/courses/{course_id}/modules/{module_id}/items', params=params)
+            
+            if not response:
+                break
+            
+            items.extend(response)
+            
+            if len(response) < 100:
+                break
+            
+            page += 1
+        
+        logger.info(f"Retrieved {len(items)} items for module {module_id}")
+        return items
+    
+    def get_course_files(self, course_id: int) -> List[Dict]:
+        """Retrieve files for a specific course"""
+        params = {
+            'per_page': 100,
+            'include[]': ['user']
+        }
+        
+        files = []
+        page = 1
+        
+        while True:
+            params['page'] = page
+            response = self._make_request('GET', f'/api/v1/courses/{course_id}/files', params=params)
+            
+            if not response:
+                break
+            
+            files.extend(response)
+            
+            if len(response) < 100:
+                break
+            
+            page += 1
+        
+        logger.info(f"Retrieved {len(files)} files for course {course_id}")
+        return files
+    
+    def get_file_download_url(self, file_id: int) -> str:
+        """Get download URL for a specific file"""
+        response = self._make_request('GET', f'/api/v1/files/{file_id}')
+        return response.get('url', '') if response else ''
+    
+    def download_file_content(self, file_id: int) -> tuple[bytes, str, str]:
+        """Download file content directly from Canvas
+        
+        Returns:
+            tuple: (file_content, filename, content_type)
+        """
+        import requests
+        
+        # First get file info
+        file_info = self._make_request('GET', f'/api/v1/files/{file_id}')
+        if not file_info:
+            raise CanvasAPIError(f"File {file_id} not found")
+        
+        download_url = file_info.get('url')
+        filename = file_info.get('display_name', f'file_{file_id}')
+        content_type = file_info.get('content-type', 'application/octet-stream')
+        
+        if not download_url:
+            raise CanvasAPIError(f"No download URL available for file {file_id}")
+        
+        # Download the file content
+        try:
+            headers = {
+                'Authorization': f'Bearer {self.api_token}',
+                'User-Agent': 'Canvas-API-Client/1.0'
+            }
+            
+            response = requests.get(download_url, headers=headers, timeout=30)
+            response.raise_for_status()
+            
+            logger.info(f"Downloaded file {filename} ({len(response.content)} bytes)")
+            return response.content, filename, content_type
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error downloading file {file_id}: {e}")
+            raise CanvasAPIError(f"Failed to download file: {e}")
 
 if __name__ == "__main__":
     # Example usage
