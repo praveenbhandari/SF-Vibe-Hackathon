@@ -3531,25 +3531,20 @@ class CanvasCourseExplorer:
             st.error(f"❌ Export failed: {str(e)}")
     
     def render_ai_notes_section(self):
-        """Render AI Notes section with course file selection and AI processing"""
-        global NAVDEEP_AVAILABLE
+        """Render AI Notes section using exact LMS AI Assistant architecture"""
         st.header("🤖 AI-Powered Note Generation")
+        st.markdown("Generate comprehensive lecture-style notes from your course documents using the exact same architecture as LMS AI Assistant.")
         
-        if not NAVDEEP_AVAILABLE:
-            st.error("❌ navdeep components are not available. Please ensure the navdeep folder is properly integrated.")
-            st.info("💡 To fix this issue:")
-            st.markdown("""
-            1. Ensure the navdeep folder exists at `/Users/praveenbhandari/sf-vibe copy/navdeep/`
-            2. Install required dependencies: `pip install PyPDF2 python-docx faiss-cpu sentence-transformers numpy openai youtube-transcript-api`
-            3. Restart the Streamlit app
-            """)
-            
-            # Try to re-import navdeep components
-            if st.button("🔄 Try to reload navdeep components"):
-                st.rerun()
+        # Import the exact notes generation functions
+        try:
+            from utils.notes import generate_notes_from_text, iter_generate_notes_from_texts
+            from utils.text_processing import chunk_text
+        except ImportError as e:
+            st.error(f"❌ Failed to import notes utilities: {e}")
+            st.info("💡 Make sure the utils directory exists with notes.py and text_processing.py")
             return
         
-        # Initialize session state for AI notes
+        # Initialize session state
         if 'ai_notes_cache' not in st.session_state:
             st.session_state.ai_notes_cache = {}
         if 'selected_file_for_ai' not in st.session_state:
@@ -3560,11 +3555,161 @@ class CanvasCourseExplorer:
         
         with col1:
             st.subheader("📁 Course Files")
-            self.render_course_file_selector()
+            self.render_course_file_selector_lms_style()
         
         with col2:
-             st.subheader("🤖 AI Processing")
-             self.render_ai_processing_panel()
+            st.subheader("🤖 AI Processing")
+            self.render_ai_processing_panel_lms_style()
+    
+    def render_course_file_selector_lms_style(self):
+        """Render course file selector using LMS AI Assistant style"""
+        downloads_dir = os.path.join(os.path.dirname(__file__), 'downloads')
+        
+        if not os.path.exists(downloads_dir):
+            st.warning("📁 No downloads folder found. Please download some course files first.")
+            return
+        
+        # Get all course folders
+        course_folders = [f for f in os.listdir(downloads_dir) 
+                         if os.path.isdir(os.path.join(downloads_dir, f))]
+        
+        if not course_folders:
+            st.warning("📁 No course folders found in downloads.")
+            return
+        
+        # Course selection with expandable view
+        for course_idx, course_folder in enumerate(course_folders):
+            course_path = os.path.join(downloads_dir, course_folder)
+            
+            with st.expander(f"📚 {course_folder}", expanded=False):
+                # Get files in this course folder
+                try:
+                    files = [f for f in os.listdir(course_path) 
+                            if os.path.isfile(os.path.join(course_path, f)) and 
+                            f.lower().endswith(('.pdf', '.docx', '.txt'))]
+                    
+                    if files:
+                        st.markdown(f"**Found {len(files)} supported files:**")
+                        
+                        for file_idx, file_name in enumerate(sorted(files)):
+                            file_path = os.path.join(course_path, file_name)
+                            
+                            # File selection button with unique key
+                            unique_key = f"lms_select_{course_idx}_{file_idx}_{course_folder}_{file_name}"
+                            if st.button(f"📄 {file_name}", key=unique_key):
+                                st.session_state.selected_file_for_ai = {
+                                    'course': course_folder,
+                                    'file_name': file_name,
+                                    'file_path': file_path
+                                }
+                                st.rerun()
+                    else:
+                        st.info("No supported files found in this course folder.")
+                        
+                except Exception as e:
+                    st.error(f"Error reading course folder: {e}")
+    
+    def render_ai_processing_panel_lms_style(self):
+        """Render AI processing panel using exact LMS AI Assistant architecture"""
+        if not st.session_state.selected_file_for_ai:
+            st.info("👈 Please select a file from the course list to generate AI notes.")
+            return
+        
+        selected_file = st.session_state.selected_file_for_ai
+        file_key = f"{selected_file['course']}_{selected_file['file_name']}"
+        
+        # Show selected file info
+        st.write(f"**Selected File:** {selected_file['file_name']}")
+        st.write(f"**Course:** {selected_file['course']}")
+        
+        # Notes generation controls (exact LMS AI Assistant style)
+        st.markdown("### 📝 Notes Generation Settings")
+        
+        col_a, col_b = st.columns([3, 1])
+        with col_a:
+            custom_title = st.text_input("Custom Title (optional)", value=selected_file['file_name'])
+        with col_b:
+            group_size = st.number_input("Chunks/group", min_value=1, max_value=10, value=3)
+        
+        # Check if notes are cached
+        cached_notes = st.session_state.ai_notes_cache.get(file_key)
+        
+        if cached_notes:
+            st.success("💾 Cached notes found!")
+            
+            # Option to regenerate
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                if st.button("🔄 Regenerate Notes", type="secondary"):
+                    self.generate_ai_notes_lms_style(selected_file, file_key, custom_title, group_size, force_regenerate=True)
+            with col2:
+                if st.button("🗑️ Clear Cache", type="secondary"):
+                    if file_key in st.session_state.ai_notes_cache:
+                        del st.session_state.ai_notes_cache[file_key]
+                    st.rerun()
+            
+            # Display cached notes
+            st.markdown("### 📝 Generated Notes")
+            st.markdown(cached_notes)
+            
+        else:
+            st.info("🤖 No cached notes found for this file.")
+            
+            # Generate new notes
+            if st.button("✨ Generate AI Notes", type="primary"):
+                self.generate_ai_notes_lms_style(selected_file, file_key, custom_title, group_size)
+    
+    def generate_ai_notes_lms_style(self, selected_file, file_key, custom_title, group_size, force_regenerate=False):
+        """Generate AI notes using exact LMS AI Assistant architecture"""
+        try:
+            from utils.notes import iter_generate_notes_from_texts
+            from utils.text_processing import chunk_text
+            
+            with st.spinner("🤖 Generating AI notes using LMS AI Assistant architecture..."):
+                file_path = selected_file['file_path']
+                
+                # Extract text from file
+                result = self._extract_text_from_file(Path(file_path))
+                
+                if result.get('success') and result.get('full_text'):
+                    extracted_text = result['full_text']
+                    
+                    # Use exact LMS AI Assistant chunking
+                    chunks = chunk_text(extracted_text, chunk_size=1200, chunk_overlap=200)
+                    
+                    if not chunks:
+                        st.error("❌ No text chunks could be extracted from the file.")
+                        return
+                    
+                    # Generate notes using exact LMS AI Assistant method
+                    sections = []
+                    placeholder = st.empty()
+                    
+                    # Use the exact same streaming approach as LMS AI Assistant
+                    for idx, sec in enumerate(iter_generate_notes_from_texts(
+                        chunks, 
+                        title=custom_title, 
+                        group_size=int(group_size)
+                    ), 1):
+                        sections.append(sec)
+                        with placeholder.container():
+                            for i, s in enumerate(sections, 1):
+                                with st.expander(f"Section {i}", expanded=(i == idx)):
+                                    st.markdown(s)
+                    
+                    # Cache the complete notes
+                    complete_notes = "\n\n".join(sections)
+                    st.session_state.ai_notes_cache[file_key] = complete_notes
+                    
+                    st.success("✅ Notes generated successfully using LMS AI Assistant architecture!")
+                    
+                else:
+                    error_msg = result.get('error', 'Unknown error')
+                    st.error(f"❌ Could not extract text from the file: {error_msg}")
+                    
+        except Exception as e:
+            st.error(f"❌ Error generating notes: {str(e)}")
+            st.exception(e)
     
     def render_course_file_selector(self):
         """Render course file selector from downloads folder"""
@@ -4796,11 +4941,12 @@ class CanvasCourseExplorer:
                     if files:
                         st.markdown(f"**Found {len(files)} supported files:**")
                         
-                        for file_name in sorted(files):
+                        for file_idx, file_name in enumerate(sorted(files)):
                             file_path = os.path.join(course_path, file_name)
                             
-                            # File selection checkbox
-                            if st.checkbox(f"📄 {file_name}", key=f"rag_select_{course_folder}_{file_name}"):
+                            # File selection checkbox with unique key
+                            unique_key = f"rag_select_{course_folders.index(course_folder)}_{file_idx}_{course_folder}_{file_name}"
+                            if st.checkbox(f"📄 {file_name}", key=unique_key):
                                 selected_files.append({
                                     'name': file_name,
                                     'path': file_path,
@@ -5146,12 +5292,12 @@ class CanvasCourseExplorer:
             
             if st.session_state.selected_course:
                 self.render_course_overview()
-                self.render_workflow_status()
+                # self.render_workflow_status()  # Commented out to hide workflow dashboard
                 
                 if RAG_AVAILABLE:
-                    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📝 Assignments", "📚 Modules", "📁 Files", "📊 Export", "⬇️ Download", "🤖 AI Notes", "💬 RAG Demo"])
+                    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 Assignments", "📚 Modules", "📁 Files", "🤖 AI Notes", "💬 RAG Demo"])
                 else:
-                    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📝 Assignments", "📚 Modules", "📁 Files", "📊 Export", "⬇️ Download", "🤖 AI Notes"])
+                    tab1, tab2, tab3, tab4 = st.tabs(["📝 Assignments", "📚 Modules", "📁 Files", "🤖 AI Notes"])
                 
                 with tab1:
                     self.render_assignments_section()
@@ -5163,12 +5309,6 @@ class CanvasCourseExplorer:
                     self.render_files_section()
                 
                 with tab4:
-                    self.render_export_section()
-                
-                with tab5:
-                    self.render_enhanced_download_section()
-                
-                with tab6:
                     if RAG_AVAILABLE:
                         self.render_ai_notes_section()
                     else:
@@ -5176,7 +5316,7 @@ class CanvasCourseExplorer:
                         st.info("Install required packages: pip install sentence-transformers chromadb")
                 
                 if RAG_AVAILABLE:
-                    with tab7:
+                    with tab5:
                         self.render_rag_demo_section()
         else:
             # Show instructions when not authenticated
@@ -5198,71 +5338,8 @@ class CanvasCourseExplorer:
             
             ### Note:
             This app focuses on data you have access to as a student. Some features like file downloads may not be available due to Canvas permissions.
-            
-            ### 🔧 Permission Troubleshooting:
-            If you encounter permission errors, use the diagnostic tools below to identify and resolve issues.
-            
-            ### 📁 Local File Processing:
-            For document processing and AI notes generation, the app now focuses on local files to work around Canvas API permission restrictions.
             """)
             
-            # Permission troubleshooting section
-            st.markdown("---")
-            st.markdown("### 🔧 Permission Troubleshooting")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                if st.button("🔍 Run Permission Diagnostic", help="Test your Canvas API token permissions"):
-                    try:
-                        from canvas_permission_diagnostic import CanvasPermissionDiagnostic
-                        diagnostic = CanvasPermissionDiagnostic(st.session_state.client.base_url, st.session_state.client.api_token)
-                        results = diagnostic.run_full_diagnostic()
-                        diagnostic.print_summary()
-                        st.success("Diagnostic completed! Check the console output for details.")
-                    except Exception as e:
-                        st.error(f"Diagnostic failed: {e}")
-            
-            with col2:
-                if st.button("✅ Validate Token Permissions", help="Detailed validation of your API token"):
-                    try:
-                        from canvas_permission_validator import CanvasPermissionValidator
-                        validator = CanvasPermissionValidator(st.session_state.client.base_url, st.session_state.client.api_token)
-                        results = validator.validate_all_permissions()
-                        validator.print_validation_report(results)
-                        st.success("Validation completed! Check the console output for details.")
-                    except Exception as e:
-                        st.error(f"Validation failed: {e}")
-            
-            # Common permission issues
-            with st.expander("📋 Common Permission Issues & Solutions", expanded=False):
-                st.markdown("""
-                **🚫 Files Access Forbidden:**
-                - **Cause:** API token lacks Files scope permission
-                - **Solution:** 
-                  1. Go to Canvas → Account → Settings → Approved Integrations
-                  2. Create new token with Files scope enabled
-                  3. Contact administrator if scopes cannot be modified
-                
-                **🚫 Courses Access Failed:**
-                - **Cause:** Not enrolled in courses or API access restricted
-                - **Solution:**
-                  1. Verify course enrollment
-                  2. Check institutional API restrictions
-                  3. Contact Canvas administrator
-                
-                **🚫 Authentication Failed:**
-                - **Cause:** Invalid or expired API token
-                - **Solution:**
-                  1. Generate new API token
-                  2. Verify Canvas URL is correct
-                  3. Check token is copied correctly
-                
-                **💡 Alternative Approaches:**
-                - Use Canvas web interface for file downloads
-                - Export course content manually
-                - Request elevated permissions from administrator
-                """)
 
 def main():
     """Main function"""
