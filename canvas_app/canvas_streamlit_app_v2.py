@@ -14,6 +14,7 @@ import streamlit as st
 import os
 import json
 import requests
+import time
 from pathlib import Path
 from datetime import datetime
 import zipfile
@@ -22,7 +23,6 @@ from typing import List, Dict, Any, Optional, Tuple
 import logging
 import pandas as pd
 import re
-import time
 from urllib.parse import urlparse, unquote, parse_qs
 import glob
 import tempfile
@@ -877,62 +877,219 @@ class CanvasCourseExplorer:
         return contexts
 
     def _generate_simple_notes(self, text: str, title: str):
-        """Generate prettified notes from text with enhanced formatting"""
+        """Generate notes using the exact same implementation as LMS-AI-Assistant"""
         try:
-            from datetime import datetime
+            # Use the exact same note generation from LMS-AI-Assistant
+            notes_sections = self.generate_notes_from_text(text, title=title)
             
-            # Enhanced text processing with better formatting
-            lines = text.split('\n')
-            processed_sections = []
-            current_section = []
-            section_title = None
+            if not notes_sections:
+                return f"# {title}\n\n*No content available to generate notes from.*"
             
-            # Process text line by line
-            for i, line in enumerate(lines):
-                line = line.strip()
-                if not line:
-                    if current_section:
-                        current_section.append("")
-                    continue
-                
-                # Detect section headers (various patterns)
-                if self._is_section_header(line, i, lines):
-                    # Save previous section
-                    if current_section and section_title:
-                        section_content = self._format_section(section_title, current_section)
-                        processed_sections.append(section_content)
-                    
-                    # Start new section
-                    section_title = self._clean_header(line)
-                    current_section = []
-                else:
-                    current_section.append(line)
-            
-            # Process final section
-            if current_section and section_title:
-                section_content = self._format_section(section_title, current_section)
-                processed_sections.append(section_content)
-            
-            # If no sections detected, create a general structure
-            if not processed_sections:
-                processed_sections = [self._format_general_content(title, lines)]
-            
-            # Add metadata and summary
-            summary = self._generate_summary(text)
-            metadata = self._generate_metadata(title, text)
-            
-            # Combine everything
-            notes = f"# 📚 {title}\n\n"
-            notes += f"*Generated on {datetime.now().strftime('%Y-%m-%d %H:%M')}*\n\n"
-            notes += f"## 📋 Summary\n{summary}\n\n"
-            notes += f"## 📊 Document Info\n{metadata}\n\n"
-            notes += "---\n\n"
-            notes += "\n\n".join(processed_sections)
-            
-            return notes
+            # Combine all sections
+            return "\n\n".join(notes_sections)
             
         except Exception as e:
-            return f"# 📚 {title}\n\n❌ **Error generating notes:** {str(e)}\n\n## Raw Content\n```\n{text[:1000]}...\n```"
+            return f"# {title}\n\n**Error generating notes:** {str(e)}\n\n```\n{text[:1000]}...\n```"
+    
+    def chunk_text(self, text: str, chunk_size: int = 800, chunk_overlap: int = 200) -> List[str]:
+        """Split text into overlapping chunks suitable for embedding - exact copy from LMS-AI-Assistant"""
+        if not text:
+            return []
+
+        normalized = " ".join(text.split())
+        if len(normalized) <= chunk_size:
+            return [normalized]
+
+        chunks: List[str] = []
+        start = 0
+        while start < len(normalized):
+            end = start + chunk_size
+            chunk = normalized[start:end]
+            chunks.append(chunk)
+            if end >= len(normalized):
+                break
+            start = max(0, end - chunk_overlap)
+        return chunks
+    
+    def generate_notes_from_text(self, text: str, title: str = None, chunk_size: int = 1200, chunk_overlap: int = 200) -> List[str]:
+        """Generate markdown notes for the given text, chunk-by-chunk - exact copy from LMS-AI-Assistant"""
+        chunks = self.chunk_text(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+        if not chunks:
+            return []
+
+        backend = os.getenv("LLM_BACKEND")
+        if backend:
+            backend = backend.lower()
+        else:
+            backend = "groq" if os.getenv("GROQ_API_KEY") else "ollama"
+
+        notes_sections: List[str] = []
+        for ch in chunks:
+            if backend == "ollama":
+                md = self._llm_markdown_ollama(ch, title)
+            else:
+                md = self._llm_markdown_openai_compatible(ch, title)
+            notes_sections.append(md or "")
+        return notes_sections
+    
+    def iter_generate_notes_from_texts(self, texts: list[str], title: str = None, group_size: int = 3, pause_seconds: float = 2.0, max_retries: int = 3):
+        """Yield markdown notes incrementally - exact copy from LMS-AI-Assistant"""
+        backend = os.getenv("LLM_BACKEND")
+        if backend:
+            backend = backend.lower()
+        else:
+            backend = "groq" if os.getenv("GROQ_API_KEY") else "ollama"
+
+        # 1) Deduplicate highly similar chunks with simple fingerprints
+        def _fingerprint(t: str) -> str:
+            import re, hashlib
+            norm = re.sub(r"\W+", "", t.lower())
+            return hashlib.sha1(norm.encode("utf-8")).hexdigest()
+
+        seen: set[str] = set()
+        unique_texts: list[str] = []
+        for t in texts:
+            fp = _fingerprint(t)
+            if fp in seen:
+                continue
+            seen.add(fp)
+            unique_texts.append(t)
+
+        n = len(unique_texts)
+        if n == 0:
+            yield "No content available to generate notes from."
+            return
+
+        prev_outline: list[str] = []
+        for i in range(0, n, max(1, group_size)):
+            group = unique_texts[i : i + max(1, group_size)]
+            content = "\n\n".join(group)
+            
+            # Skip if content is too short or empty
+            if len(content.strip()) < 50:
+                yield f"## Section {i//max(1, group_size) + 1}\n*Content too brief to process*"
+                continue
+                
+            # Provide a brief outline of prior sections to discourage repetition
+            if prev_outline:
+                prefix = (
+                    "Previously covered topics (do not repeat, only add new points):\n"
+                    + "\n".join(f"- {o}" for o in prev_outline[-5:])
+                    + "\n\n"
+                )
+            else:
+                prefix = ""
+            payload = prefix + content
+            
+            # Retry with simple backoff to avoid 429 limits
+            attempt = 0
+            md = ""
+            while attempt <= max_retries:
+                try:
+                    if backend == "ollama":
+                        md = self._llm_markdown_ollama(payload, title)
+                    else:
+                        md = self._llm_markdown_openai_compatible(payload, title)
+                    break
+                except Exception as e:
+                    attempt += 1
+                    if attempt > max_retries:
+                        md = f"## Section {i//max(1, group_size) + 1}\n*Error generating notes: {str(e)[:100]}*"
+                        break
+                    time.sleep(min(pause_seconds * (1.5 ** (attempt - 1)), 15.0))
+            
+            # Ensure we always yield something
+            if not md or len(md.strip()) < 10:
+                md = f"## Section {i//max(1, group_size) + 1}\n*Generated content was empty or too short*"
+            
+            yield md
+            
+            # Extract a simple one-line summary as outline seed (first heading or first line)
+            summary_line = (md.splitlines()[0] if md else "").strip()
+            if summary_line:
+                prev_outline.append(summary_line[:120])
+            # Pause between sections to respect rate limits
+            if pause_seconds > 0:
+                time.sleep(pause_seconds)
+    
+    def _llm_markdown_ollama(self, chunk: str, title: str = None) -> str:
+        """Generate markdown using Ollama - exact copy from LMS-AI-Assistant"""
+        try:
+            import ollama  # type: ignore
+        except Exception as e:
+            return f"## Error\n*Ollama not available: {str(e)}*"
+        
+        model_name = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+        user_prompt = (
+            (f"Title: {title}\n" if title else "")
+            + "Create well-formatted lecture notes for the following content.\n\n"
+            + chunk
+        )
+        messages = [
+            {"role": "system", "content": self.NOTES_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ]
+        try:
+            resp = ollama.chat(model=model_name, messages=messages, options={"temperature": 0.2})
+            return resp.get("message", {}).get("content", "")
+        except Exception as e:
+            return f"## Error\n*Ollama error: {str(e)}*"
+    
+    def _llm_markdown_openai_compatible(self, chunk: str, title: str = None) -> str:
+        """Generate markdown using OpenAI-compatible API - exact copy from LMS-AI-Assistant"""
+        try:
+            from openai import OpenAI
+        except Exception as e:
+            return f"## Error\n*OpenAI not available: {str(e)}*"
+
+        api_key = os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            return f"## Error\n*Missing GROQ_API_KEY/OPENAI_API_KEY for notes generation*"
+        
+        base_url = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
+        client = OpenAI(api_key=api_key, base_url=base_url)
+
+        model_name = os.getenv("GROQ_MODEL")
+        if not model_name:
+            try:
+                models = client.models.list()
+                llama_models = [m.id for m in getattr(models, "data", []) if "llama" in getattr(m, "id", "")]
+                model_name = sorted(llama_models)[0] if llama_models else "llama-3.1-8b-instant"
+            except Exception:
+                model_name = "llama-3.1-8b-instant"
+
+        user_prompt = (
+            (f"Title: {title}\n" if title else "")
+            + "Create well-formatted lecture notes for the following content.\n\n"
+            + chunk
+        )
+        messages = [
+            {"role": "system", "content": self.NOTES_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ]
+        try:
+            resp = client.chat.completions.create(
+                model=model_name,
+                messages=messages,
+                temperature=0.2,
+                max_tokens=800,
+            )
+            return resp.choices[0].message.content or ""
+        except Exception as e:
+            return f"## Error\n*API error: {str(e)}*"
+    
+    # Notes system prompt - exact copy from LMS-AI-Assistant
+    NOTES_SYSTEM_PROMPT = (
+        "You are an expert technical writer creating lecture-article notes for students. "
+        "Only include content a diligent student would write in a notebook: crisp definitions, key formulas, step-by-step procedures, concise examples, short summaries, caveats, and essential code snippets. "
+        "Exclude fluff, marketing, anecdotes, and repeated text.\n\n"
+        "Formatting rules:\n"
+        "- Use clear H2/H3 headings (##, ###)\n"
+        "- Prefer short bullet lists\n"
+        "- Put code in fenced blocks with language hints when apparent (```python, ```js, etc.)\n"
+        "- Keep paragraphs short and focused\n"
+        "- Do not hallucinate; only use the provided content.\n"
+    )
     
     def _is_section_header(self, line: str, index: int, all_lines: List[str]) -> bool:
         """Detect if a line is likely a section header"""
@@ -4296,7 +4453,7 @@ class CanvasCourseExplorer:
             self.render_resource_recommendations(all_files)
     
     def render_document_browser(self, all_files):
-        """Render document browser with enhanced preview"""
+        """Render document browser using the course file selector"""
         st.subheader("📄 Document Browser")
         
         # Create the beautiful header display
@@ -4315,131 +4472,93 @@ class CanvasCourseExplorer:
         </div>
         """, unsafe_allow_html=True)
         
-        # Organize files by course/directory
-        course_files = {}
-        for file_info in all_files:
-            file_path = Path(file_info['file_path'])
-            # Extract course name from path
-            course_name = "Unknown Course"
-            if len(file_path.parts) >= 2:
-                course_name = file_path.parts[-2]  # Parent directory name
-            
-            if course_name not in course_files:
-                course_files[course_name] = []
-            course_files[course_name].append(file_info)
+        # Use the existing course file selector
+        with st.container():
+            st.subheader("📁 Course Files")
+            self.render_course_file_selector()
         
-        # Display files organized by course
-        if course_files:
-            for course_name, files in course_files.items():
-                # Course header
-                st.markdown(f"""
+        # Show content preview and actions for selected file
+        if hasattr(st.session_state, 'selected_file_for_ai') and st.session_state.selected_file_for_ai:
+            selected = st.session_state.selected_file_for_ai
+            file_path = selected['file_path']
+            
+            # Extract text from the selected file
+            result = self._extract_text_from_file(Path(file_path))
+            
+            if result.get('success'):
+                st.markdown("---")
+                st.markdown("### 📄 Content Preview")
+                
+                # Create a beautiful container for the content preview
+                st.markdown("""
                 <div style="
-                    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    padding: 20px;
+                    border-radius: 15px;
+                    margin: 10px 0;
+                    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+                    border: 1px solid rgba(255, 255, 255, 0.2);
+                ">
+                    <div style="
+                        background: white;
+                        padding: 20px;
+                        border-radius: 10px;
+                        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                        max-height: 300px;
+                        overflow-y: auto;
+                    ">
+                """, unsafe_allow_html=True)
+                
+                # Format the content preview
+                preview_text = result.get('full_text', '')[:1000] + "..." if len(result.get('full_text', '')) > 1000 else result.get('full_text', '')
+                formatted_preview = self._format_content_preview(preview_text, selected['file_name'])
+                st.markdown(formatted_preview)
+                
+                st.markdown("""
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Action buttons for selected file
+                col1, col2, col3 = st.columns([1, 1, 1])
+                
+                with col1:
+                    if st.button("📝 Generate AI Notes", key=f"notes_{selected['file_name']}_{selected['course']}", type="primary"):
+                        # Create file info for note generation
+                        file_info = {
+                            'name': selected['file_name'],
+                            'text': result.get('full_text', ''),
+                            'type': 'local_document',
+                            'file_path': file_path
+                        }
+                        st.session_state.selected_file_for_notes = file_info
+                        st.success("File selected for AI note generation!")
+                
+                with col2:
+                    if st.button("👁️ Quick Preview", key=f"preview_{selected['file_name']}_{selected['course']}"):
+                        st.info(f"Preview: {selected['file_name']}")
+                
+                with col3:
+                    if st.button("📊 File Info", key=f"info_{selected['file_name']}_{selected['course']}"):
+                        file_size = len(result.get('full_text', '')) / 1024  # KB
+                        st.info(f"File: {selected['file_name']}\nSize: {file_size:.1f} KB\nCourse: {selected['course']}")
+                
+                # AI Processing section
+                st.markdown("""
+                <div style="
+                    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
                     padding: 20px;
                     border-radius: 10px;
                     margin: 15px 0;
                     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+                    text-align: center;
                 ">
-                    <h3 style="color: white; margin: 0; font-size: 20px;">📚 {course_name}</h3>
+                    <h4 style="color: white; margin: 0; font-size: 18px;">🤖 AI Processing</h4>
+                    <p style="color: white; margin: 10px 0 0 0; opacity: 0.9;">Ready to generate AI notes from the selected file!</p>
                 </div>
                 """, unsafe_allow_html=True)
-                
-                # Display files in this course
-                for file_info in files:
-                    file_type_display = {
-                        'local_document': '📄',
-                        'uploaded_document': '📤',
-                        'course_document': '📄',
-                        'video': '🎥',
-                        'document': '📄'
-                    }.get(file_info['type'], '📄')
-                    
-                    # Create file selection interface
-                    col1, col2, col3 = st.columns([1, 8, 1])
-                    
-                    with col1:
-                        # File icon
-                        st.markdown(f"<div style='text-align: center; padding: 10px;'>{file_type_display}</div>", unsafe_allow_html=True)
-                    
-                    with col2:
-                        # File name and selection
-                        file_key = f"select_{file_info['name']}_{course_name}"
-                        if st.checkbox(f"**{file_info['name']}**", key=file_key):
-                            # Show content preview when selected
-                            st.markdown("---")
-                            st.markdown("### 📄 Content Preview")
-                            
-                            # Create a beautiful container for the content preview
-                            st.markdown("""
-                            <div style="
-                                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                                padding: 20px;
-                                border-radius: 15px;
-                                margin: 10px 0;
-                                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-                                border: 1px solid rgba(255, 255, 255, 0.2);
-                            ">
-                                <div style="
-                                    background: white;
-                                    padding: 20px;
-                                    border-radius: 10px;
-                                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-                                    max-height: 300px;
-                                    overflow-y: auto;
-                                ">
-                            """, unsafe_allow_html=True)
-                            
-                            # Format the content preview with enhanced styling
-                            preview_text = file_info['text'][:1000] + "..." if len(file_info['text']) > 1000 else file_info['text']
-                            formatted_preview = self._format_content_preview(preview_text, file_info['name'])
-                            st.markdown(formatted_preview)
-                            
-                            st.markdown("""
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                            
-                            # AI Processing section
-                            st.markdown("""
-                            <div style="
-                                background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-                                padding: 20px;
-                                border-radius: 10px;
-                                margin: 15px 0;
-                                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-                                text-align: center;
-                            ">
-                                <h4 style="color: white; margin: 0; font-size: 18px;">🤖 AI Processing</h4>
-                                <p style="color: white; margin: 10px 0 0 0; opacity: 0.9;">👈 Please select a file from the course list to generate AI notes.</p>
-                            </div>
-                            """, unsafe_allow_html=True)
-                    
-                    with col3:
-                        # Action buttons
-                        if st.button("📝", key=f"notes_{file_info['name']}_{course_name}", help="Generate AI Notes"):
-                            st.session_state.selected_file_for_notes = file_info
-                            st.success("File selected for AI note generation!")
-                        
-                        if st.button("👁️", key=f"preview_{file_info['name']}_{course_name}", help="Quick Preview"):
-                            st.info(f"Preview: {file_info['name']}")
-        
-        else:
-            # No files found message
-            st.markdown("""
-            <div style="
-                background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
-                padding: 30px;
-                border-radius: 15px;
-                margin: 20px 0;
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-                text-align: center;
-            ">
-                <h3 style="color: #8b4513; margin: 0; font-size: 24px;">📁 No Course Files Found</h3>
-                <p style="color: #8b4513; margin: 15px 0 0 0; font-size: 16px;">
-                    Please download some course files first or upload documents to get started.
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
+            else:
+                st.error(f"❌ Error reading file: {result.get('error', 'Unknown error')}")
     
     def render_rag_chatbot(self, all_files, profile_id, memory_short_window):
         """Render RAG Chatbot with Memory"""
@@ -4821,8 +4940,8 @@ class CanvasCourseExplorer:
                         st.rerun()
     
     def render_ai_notes_generation(self):
-        """Render AI notes generation interface"""
-        st.subheader("📝 AI Notes Generation (Local Files)")
+        """Render AI notes generation interface - exact same as LMS-AI-Assistant"""
+        st.subheader("Generate Lecture-Style Notes")
         
         # Check for local files in downloads directory
         downloads_dir = Path("downloads")
@@ -4853,150 +4972,81 @@ class CanvasCourseExplorer:
             )
             
             if uploaded_files:
-                st.session_state.uploaded_files = uploaded_files
-                st.success(f"✅ Uploaded {len(uploaded_files)} files")
-                st.rerun()
-            
+                st.session_state.uploaded_files = []
+                for uploaded_file in uploaded_files:
+                    # Save uploaded file temporarily
+                    temp_path = Path("temp") / uploaded_file.name
+                    temp_path.parent.mkdir(exist_ok=True)
+                    with open(temp_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                    
+                    # Extract text
+                    result = self._extract_text_from_file(temp_path)
+                    if result.get('success'):
+                        st.session_state.uploaded_files.append({
+                            'name': uploaded_file.name,
+                            'text': result.get('full_text', ''),
+                            'type': 'uploaded_document',
+                            'file_path': str(temp_path)
+                        })
+                    temp_path.unlink()  # Clean up temp file
+                
+                if st.session_state.uploaded_files:
+                    st.success(f"✅ Processed {len(st.session_state.uploaded_files)} uploaded files!")
+        
+        # Show available files
+        all_files = []
+        if local_files:
+            for file_path in local_files[:10]:  # Limit to first 10 files
+                result = self._extract_text_from_file(file_path)
+                if result.get('success'):
+                    all_files.append({
+                        'name': file_path.name,
+                        'text': result.get('full_text', ''),
+                        'type': 'local_document',
+                        'file_path': str(file_path)
+                    })
+        
+        if st.session_state.uploaded_files:
+            all_files.extend(st.session_state.uploaded_files)
+        
+        if not all_files:
             return
         
-        # Show available local files
-        if local_files:
-            st.success(f"📁 Found {len(local_files)} files in downloads directory")
-            
-            # File selection interface
-            st.markdown("### 📋 Select Files to Process")
-            
-            # Group files by course/folder
-            file_groups = {}
-            for file_path in local_files:
-                # Get the course folder name (parent directory)
-                course_folder = file_path.parent.name
-                if course_folder not in file_groups:
-                    file_groups[course_folder] = []
-                file_groups[course_folder].append(file_path)
-            
-            # Display files grouped by course
-            selected_files = []
-            for course_name, files in file_groups.items():
-                with st.expander(f"📚 {course_name} ({len(files)} files)", expanded=True):
-                    for file_path in files:
-                        file_size = file_path.stat().st_size / (1024 * 1024)  # MB
-                        col1, col2, col3 = st.columns([3, 1, 1])
-                        
-                        with col1:
-                            st.write(f"📄 {file_path.name}")
-                        with col2:
-                            st.write(f"{file_size:.1f} MB")
-                        with col3:
-                            if st.checkbox("Select", key=f"select_{file_path.name}"):
-                                selected_files.append(file_path)
-            
-            if not selected_files:
-                st.warning("⚠️ Please select at least one file to process")
-                return
+        # Exact same UI as LMS-AI-Assistant
+        coln1, coln2 = st.columns([3, 1])
+        with coln1:
+            custom_title = st.text_input("Notes Title (optional)")
+        with coln2:
+            notes_chunk_size = st.number_input("Chunk size", min_value=400, max_value=4000, value=1200, step=100)
         
-        # Show processing options first
-        st.markdown("### ⚙️ Processing Options")
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            embed_model = st.selectbox(
-                "Embedding Model",
-                ["sentence-transformers/all-MiniLM-L6-v2", "sentence-transformers/all-mpnet-base-v2"],
-                index=0
-            )
-        
-        with col2:
-            chunk_size = st.slider("Chunk Size", 500, 2000, 1000)
-        
-        with col3:
-            group_size = st.slider("Group Size", 1, 5, 3)
-        
-        # Processing buttons
-        col1, col2 = st.columns([1, 1])
-        
-        with col1:
-            if st.button("🤖 Generate AI Notes", type="primary"):
-                with st.spinner("Generating AI notes from selected files..."):
-                    try:
-                        # Use selected local files if available, otherwise uploaded files
-                        files_to_process = selected_files if selected_files else st.session_state.uploaded_files
-                        
-                        if not files_to_process:
-                            st.error("❌ No files selected for processing")
-                            return
-                        
-                        # Convert uploaded files to Path objects if needed
-                        if st.session_state.uploaded_files and not selected_files:
-                            files_to_process = [Path(f.name) for f in st.session_state.uploaded_files]
-                        
-                        # Process the files with selected parameters
-                        self.process_files_for_notes(
-                            files=files_to_process,
-                            title="AI Generated Notes",
-                            embed_model=embed_model,
-                            top_k=5,
-                            chunk_size=chunk_size,
-                            group_size=group_size
-                        )
-                        
-                    except Exception as e:
-                        st.error(f"❌ Error generating notes: {str(e)}")
-        
-        with col2:
-            if st.button("🔄 Refresh File List"):
-                st.rerun()
-        
-        # Show file processing summary
-        if selected_files or st.session_state.uploaded_files:
-            st.markdown("### 📊 Processing Summary")
-            total_files = len(selected_files) if selected_files else len(st.session_state.uploaded_files)
-            total_size = sum(f.stat().st_size for f in selected_files) if selected_files else 0
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Files Selected", total_files)
-            with col2:
-                st.metric("Total Size", f"{total_size / (1024*1024):.1f} MB")
-            with col3:
-                st.metric("Model", embed_model.split('/')[-1])
-        
-        # Display generated notes
-        if st.session_state.notes_generated and st.session_state.current_notes:
-            st.subheader("📄 Generated Notes")
-            
-            # Create a beautiful container for the notes
-            st.markdown("""
-            <div style="
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                padding: 20px;
-                border-radius: 15px;
-                margin: 10px 0;
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-                border: 1px solid rgba(255, 255, 255, 0.2);
-            ">
-                <div style="
-                    background: white;
-                    padding: 20px;
-                    border-radius: 10px;
-                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-                ">
-            """, unsafe_allow_html=True)
-            
-            st.markdown(st.session_state.current_notes)
-            
-            st.markdown("""
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Download notes
-            st.download_button(
-                label="📥 Download Notes",
-                data=st.session_state.current_notes,
-                file_name="ai_generated_notes.md",
-                mime="text/markdown"
-            )
+        if st.button("Start Note-Making"):
+            with st.spinner("Generating notes..."):
+                # Gather all text from files
+                texts = [f['text'] for f in all_files if f.get('text')]
+                
+                if not texts:
+                    st.warning("No content found in files to generate notes from.")
+                    return
+                
+                st.markdown("### Notes (Generating)")
+                placeholder = st.empty()
+                col_a, col_b = st.columns([3,1])
+                with col_b:
+                    group_size = st.number_input("Chunks/group", min_value=1, max_value=10, value=3)
+
+                sections = []
+                for idx, sec in enumerate(self.iter_generate_notes_from_texts(texts, title=custom_title, group_size=int(group_size)), 1):
+                    sections.append(sec)
+                    with placeholder.container():
+                        for i, s in enumerate(sections, 1):
+                            with st.expander(f"Section {i}", expanded=(i == idx)):
+                                st.markdown(s)
+                st.success("Notes generated.")
+                
+                # Store generated notes in session state
+                st.session_state.current_notes = "\n\n".join(sections)
+                st.session_state.notes_generated = True
     
     def render_qa_chatbot(self):
         """Render QA chatbot interface"""
