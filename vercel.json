@@ -1,1 +1,30 @@
-{"rewrites":[{"source":"/(.*)","destination":"/index.html"}]}
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "app.py",
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "50mb"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "app.py"
+    }
+  ],
+  "functions": {
+    "app.py": {
+      "maxDuration": 30
+    }
+  },
+  "env": {
+    "GROQ_API_KEY": "@groq_api_key",
+    "GROQ_MODEL": "llama-3.1-8b-instant",
+    "LLM_BACKEND": "groq",
+    "CANVAS_BASE_URL": "@canvas_base_url",
+    "CANVAS_API_TOKEN": "@canvas_api_token"
+  }
+}
