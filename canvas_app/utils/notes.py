@@ -27,10 +27,16 @@ NOTES_SYSTEM_PROMPT = (
 
 
 def _llm_markdown_ollama(chunk: str, title: str | None) -> str:
-    import ollama  # type: ignore
+    from openai import OpenAI
     import time
     
-    model_name = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+    # Use Groq API instead of Ollama
+    client = OpenAI(
+        api_key=os.getenv("GROQ_API_KEY"),
+        base_url="https://api.groq.com/openai/v1"
+    )
+    
+    model_name = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
     user_prompt = (
         (f"Title: {title}\n" if title else "")
         + "Create well-formatted lecture notes for the following content.\n\n"
@@ -41,23 +47,23 @@ def _llm_markdown_ollama(chunk: str, title: str | None) -> str:
         {"role": "user", "content": user_prompt},
     ]
     
-    # Add retry logic for Ollama
+    # Add retry logic for Groq API
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            resp = ollama.chat(
-                model=model_name, 
-                messages=messages, 
-                options={
-                    "temperature": 0.2,
-                    "top_p": 0.9,
-                    "num_predict": 800
-                }
+            resp = client.chat.completions.create(
+                model=model_name,
+                messages=messages,
+                temperature=0.2,
+                max_tokens=800,
+                top_p=0.9
             )
-            return resp.get("message", {}).get("content", "")
+            return resp.choices[0].message.content
         except Exception as e:
-            if attempt < max_retries - 1:
-                time.sleep(1)  # Short wait for Ollama
+            if "429" in str(e) and attempt < max_retries - 1:
+                wait_time = min(2 ** attempt + 1, 10)  # Exponential backoff
+                print(f"Rate limit hit, waiting {wait_time} seconds before retry {attempt + 1}/{max_retries}")
+                time.sleep(wait_time)
                 continue
             else:
                 raise e
@@ -123,8 +129,8 @@ def generate_notes_from_text(
     if not chunks:
         return []
 
-    # Use Ollama for notes generation to avoid API rate limits
-    backend = "ollama"
+    # Use Groq API for notes generation
+    backend = "groq"
 
     notes_sections: List[str] = []
     for ch in chunks:
@@ -147,8 +153,8 @@ def iter_generate_notes_from_texts(
     Yield markdown notes incrementally, processing the input texts in groups
     (default 3 chunks per group) to provide on-the-go generation.
     """
-    # Use Ollama for notes generation to avoid API rate limits
-    backend = "ollama"
+    # Use Groq API for notes generation
+    backend = "groq"
 
     # 1) Deduplicate highly similar chunks with simple fingerprints
     def _fingerprint(t: str) -> str:
