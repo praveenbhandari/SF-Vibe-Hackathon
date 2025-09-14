@@ -1,9 +1,6 @@
-import html
-import re
-import urllib.parse
-from typing import List, Dict
-
-import requests
+from duckduckgo_search import DDGS
+from typing import List, Dict, Optional
+import time
 
 
 def get_fallback_resources(topic: str) -> Dict[str, List[Dict[str, str]]]:
@@ -81,49 +78,40 @@ def get_fallback_resources(topic: str) -> Dict[str, List[Dict[str, str]]]:
 
 
 def recommend_articles_ddg(topic: str, limit: int = 3) -> List[Dict[str, str]]:
-    """Fetch simple article links from DuckDuckGo HTML endpoint.
-    Returns a list of {title, url}. Best-effort HTML parse without extra deps.
+    """Fetch article links using DuckDuckGo search API.
+    Returns a list of {title, url, body}.
     """
-    q = urllib.parse.quote(topic)
-    url = f"https://duckduckgo.com/html/?q={q}+tutorial"
     try:
-        r = requests.get(url, timeout=15, headers={
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        })
-        r.raise_for_status()
-        html_text = r.text
+        # Add delay to avoid rate limiting
+        time.sleep(1)
         
-        items: List[Dict[str, str]] = []
-        
-        # Try multiple patterns for different DuckDuckGo layouts
-        patterns = [
-            r'<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
-            r'<a[^>]*class="result__title"[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
-            r'<a[^>]*href="([^"]+)"[^>]*class="[^"]*result[^"]*"[^>]*>(.*?)</a>',
-            r'<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>'
-        ]
-        
-        for pattern in patterns:
-            for m in re.finditer(pattern, html_text, flags=re.I|re.S):
-                url = html.unescape(m.group(1))
-                title = re.sub(r"<.*?>", "", html.unescape(m.group(2))).strip()
-                
-                # Filter for valid URLs and titles
-                if (title and url and url.startswith("http") and 
-                    len(title) > 10 and 
-                    not any(skip in url.lower() for skip in ['duckduckgo.com', 'google.com', 'bing.com'])):
-                    items.append({"title": title, "url": url})
-                    if len(items) >= limit:
-                        break
-            if items:
-                break
-                
-        # If no items found, use fallback
-        if not items:
-            print(f"No articles found for '{topic}', using fallback resources")
-            fallback = get_fallback_resources(topic)
-            return fallback["articles"][:limit]
-        return items
+        with DDGS(timeout=15) as ddgs:
+            # Search for tutorial articles with better query
+            query = f"{topic} tutorial guide documentation"
+            results = [r for r in ddgs.text(query, max_results=limit*3, region='wt-wt', safesearch='off')]
+            
+            items = []
+            for result in results:
+                if result.get('title') and result.get('href'):
+                    # Filter out unwanted domains
+                    url = result['href']
+                    if not any(skip in url.lower() for skip in ['duckduckgo.com', 'google.com', 'bing.com', 'youtube.com', 'facebook.com', 'twitter.com']):
+                        items.append({
+                            "title": result['title'],
+                            "url": url,
+                            "body": result.get('body', '')
+                        })
+                        if len(items) >= limit:
+                            break
+            
+            # If no items found, use fallback
+            if not items:
+                print(f"No articles found for '{topic}', using fallback resources")
+                fallback = get_fallback_resources(topic)
+                return fallback["articles"][:limit]
+            
+            return items
+            
     except Exception as e:
         print(f"Error in recommend_articles_ddg: {e}")
         # Return fallback resources
@@ -132,49 +120,37 @@ def recommend_articles_ddg(topic: str, limit: int = 3) -> List[Dict[str, str]]:
 
 
 def recommend_youtube_ddg(topic: str, limit: int = 3) -> List[Dict[str, str]]:
-    """Fetch YouTube video links from DuckDuckGo search.
-    Returns a list of {title, url}. Searches specifically for YouTube videos.
+    """Fetch YouTube video links using DuckDuckGo search API.
+    Returns a list of {title, url, thumbnail}.
     """
-    q = urllib.parse.quote(f"{topic} site:youtube.com")
-    url = f"https://duckduckgo.com/html/?q={q}"
     try:
-        r = requests.get(url, timeout=15, headers={
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        })
-        r.raise_for_status()
-        html_text = r.text
+        # Add delay to avoid rate limiting
+        time.sleep(1)
         
-        items: List[Dict[str, str]] = []
-        
-        # Try multiple patterns for different DuckDuckGo layouts
-        patterns = [
-            r'<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
-            r'<a[^>]*class="result__title"[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
-            r'<a[^>]*href="([^"]+)"[^>]*class="[^"]*result[^"]*"[^>]*>(.*?)</a>',
-            r'<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>'
-        ]
-        
-        for pattern in patterns:
-            for m in re.finditer(pattern, html_text, flags=re.I|re.S):
-                url = html.unescape(m.group(1))
-                title = re.sub(r"<.*?>", "", html.unescape(m.group(2))).strip()
-                
-                # Filter for YouTube URLs
-                if (title and url and "youtube.com" in url and 
-                    ("watch?v=" in url or "youtu.be/" in url) and
-                    len(title) > 5):
-                    items.append({"title": title, "url": url})
+        with DDGS(timeout=15) as ddgs:
+            # Search for YouTube videos with better query
+            query = f"{topic} tutorial course"
+            results = [r for r in ddgs.videos(query, max_results=limit*2, region='wt-wt', safesearch='off', timelimit='y')]
+            
+            items = []
+            for result in results:
+                if result.get('title') and result.get('content'):
+                    items.append({
+                        "title": result['title'],
+                        "url": result['content'],
+                        "thumbnail": result.get('thumbnail', '')
+                    })
                     if len(items) >= limit:
                         break
-            if items:
-                break
-                
-        # If no items found, use fallback
-        if not items:
-            print(f"No videos found for '{topic}', using fallback resources")
-            fallback = get_fallback_resources(topic)
-            return fallback["videos"][:limit]
-        return items
+            
+            # If no items found, use fallback
+            if not items:
+                print(f"No videos found for '{topic}', using fallback resources")
+                fallback = get_fallback_resources(topic)
+                return fallback["videos"][:limit]
+            
+            return items
+            
     except Exception as e:
         print(f"Error in recommend_youtube_ddg: {e}")
         # Return fallback resources
