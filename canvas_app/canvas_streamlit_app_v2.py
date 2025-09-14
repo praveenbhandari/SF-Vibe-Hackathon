@@ -3558,7 +3558,7 @@ class CanvasCourseExplorer:
             self.render_course_file_selector_lms_style()
         
         with col2:
-             st.subheader("🤖 AI Processing")
+            st.subheader("🤖 AI Processing")
             self.render_ai_processing_panel_lms_style()
     
     def render_course_file_selector_lms_style(self):
@@ -5375,8 +5375,8 @@ class CanvasCourseExplorer:
         
         # Learning interface
         col1, col2 = st.columns([2, 1])
-            
-            with col1:
+        
+        with col1:
             st.subheader("💬 Learning Chat")
             
             # Display conversation history
@@ -5446,7 +5446,7 @@ class CanvasCourseExplorer:
                         st.session_state.learning_messages.append({"role": "assistant", "content": "I'm sorry, I encountered an error. Please try again."})
                         st.rerun()
             
-            with col2:
+        with col2:
             st.subheader("📚 Learning Resources")
             
             # Topic-based recommendations
@@ -5481,14 +5481,14 @@ class CanvasCourseExplorer:
                     else:
                         st.info("No topics found in course notes.")
                         
-                    except Exception as e:
+                except Exception as e:
                     st.warning(f"Could not load topic recommendations: {e}")
             else:
                 st.info("Generate AI notes to see topic-based recommendations!")
             
             # Learning suggestions
             st.markdown("### 💡 Learning Tips")
-                st.markdown("""
+            st.markdown("""
             - **Be specific**: Ask about particular concepts or topics
             - **Mention preferences**: Say "I prefer videos" or "I like hands-on practice"
             - **Ask for examples**: Request practical examples or use cases
