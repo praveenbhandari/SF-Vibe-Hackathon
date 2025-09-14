@@ -105,3 +105,7 @@ class MemoryStore:
 		if facts:
 			contexts.append({"source": "memory:long_term", "chunk_index": 0, "text": "\n".join(f"- {f}" for f in facts)})
 		return contexts
+
+
+# Alias for backward compatibility
+ConversationMemory = MemoryStore

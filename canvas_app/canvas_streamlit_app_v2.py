@@ -30,43 +30,63 @@ import sys
 
 from canvas_client import CanvasClient
 from canvas_config import CanvasConfig
-# Add navdeep modules to path
-# Import navdeep components
-NAVDEEP_AVAILABLE = False
+# RAG Demo imports
 try:
-    # Add navdeep src directory to Python path
-    navdeep_src_path = '/Users/praveenbhandari/sf-vibe/navdeep/src'
-    if navdeep_src_path not in sys.path:
-        sys.path.insert(0, navdeep_src_path)
+    # Add send_to_friend directory to path for imports
+    send_to_friend_path = os.path.join(os.path.dirname(__file__), 'send_to_friend')
+    if send_to_friend_path not in sys.path:
+        sys.path.insert(0, send_to_friend_path)
     
-    # Import navdeep components
-    from pipelines.text_extraction_pipeline import TextExtractionPipeline
-    from utils.ingest import ingest_documents
-    from utils.retrieval import mmr_retrieve
-    from utils.rag_llm import answer_with_context
-    from utils.notes import generate_notes_from_text, iter_generate_notes_from_texts
-    
-    # If we get here, all imports succeeded
-    NAVDEEP_AVAILABLE = True
-    print("✅ navdeep components loaded successfully")
+    # Import from correct paths based on directory structure
+    from src.pipelines.text_extraction_pipeline import TextExtractionPipeline
+    from src.utils.ingest import ingest_documents, semantic_search
+    from src.utils.retrieval import mmr_retrieve
+    from src.utils.rag_llm import answer_with_context
+    from src.utils.memory import ConversationMemory
+    from src.utils.learning_mode import extract_topics_from_notes, recommend_youtube, build_topic_context
+    from src.utils.web_search import recommend_articles_ddg, recommend_youtube_ddg
+    from src.utils.notes import generate_notes_from_text, iter_generate_notes_from_texts
+    from src.utils.notes_ingest import ingest_notes_sections
 except ImportError as e:
-    print(f"❌ navdeep components not available: {e}")
-    # Set globals to None for safety
-    TextExtractionPipeline = None
-    ingest_documents = None
-    mmr_retrieve = None
-    answer_with_context = None
-    generate_notes_from_text = None
-    iter_generate_notes_from_texts = None
+    st.error(f"RAG Demo dependencies not found: {e}")
+    st.error("Please ensure the send_to_friend directory and its dependencies are available.")
+    # Continue without RAG features
+    RAG_AVAILABLE = False
+else:
+    RAG_AVAILABLE = True
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# RAG Demo Configuration
+if RAG_AVAILABLE:
+    TOP_K = 5
+    EMBED_MODEL = "all-MiniLM-L6-v2"
+    
+    def _store_dir():
+        return os.path.join("data", "vector_store")
+    
+    def _meta_path():
+        return os.path.join("data", "notes_index", "metadata.json")
+    
+    # Initialize memory
+    mem = ConversationMemory()
+
+# Check for Navdeep components availability
+try:
+    navdeep_path = "/Users/praveenbhandari/sf-vibe copy/navdeep/src"
+    if navdeep_path not in sys.path:
+        sys.path.append(navdeep_path)
+    from navdeep.text_extraction import TextExtractionPipeline
+    NAVDEEP_AVAILABLE = True
+except ImportError:
+    NAVDEEP_AVAILABLE = False
+
 # Page configuration
 st.set_page_config(
-    page_title="Canvas LMS Course Explorer",
-    page_icon="📚",
+    page_title="Canvas LMS Explorer + RAG Demo",
+    page_icon="🎓",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -75,10 +95,51 @@ st.set_page_config(
 st.markdown("""
 <style>
     .main-header {
-        font-size: 2.5rem;
-        color: #1f77b4;
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        padding: 1rem;
+        border-radius: 10px;
+        color: white;
         text-align: center;
         margin-bottom: 2rem;
+    }
+    .metric-card {
+        background: white;
+        padding: 1rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        border-left: 4px solid #667eea;
+    }
+    .status-badge {
+        padding: 0.25rem 0.5rem;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        font-weight: bold;
+    }
+    .status-completed { background-color: #d4edda; color: #155724; }
+    .status-pending { background-color: #fff3cd; color: #856404; }
+    .status-in-progress { background-color: #cce5ff; color: #004085; }
+    .workflow-step {
+        padding: 1rem;
+        margin: 0.5rem 0;
+        border-radius: 8px;
+        border-left: 4px solid #28a745;
+    }
+    .sidebar .sidebar-content {
+        background-color: #f8f9fa;
+    }
+    .chat-message {
+        padding: 1rem;
+        margin: 0.5rem 0;
+        border-radius: 8px;
+        background-color: #f8f9fa;
+    }
+    .user-message {
+        background-color: #e3f2fd;
+        border-left: 4px solid #2196f3;
+    }
+    .assistant-message {
+        background-color: #f3e5f5;
+        border-left: 4px solid #9c27b0;
     }
     .course-card {
         border: 1px solid #ddd;
@@ -415,6 +476,7 @@ class CanvasCourseExplorer:
     
     def initialize_session_state(self):
         """Initialize session state variables"""
+        # Canvas LMS session state
         if 'authenticated' not in st.session_state:
             st.session_state.authenticated = False
         if 'user_info' not in st.session_state:
@@ -433,11 +495,28 @@ class CanvasCourseExplorer:
         # Sync canvas_client with client when client is available
         if st.session_state.client and not st.session_state.canvas_client:
             st.session_state.canvas_client = st.session_state.client
+            
+        # RAG Demo session state
+        if RAG_AVAILABLE:
+            if 'uploaded_files' not in st.session_state:
+                st.session_state.uploaded_files = []
+            if 'notes_generated' not in st.session_state:
+                st.session_state.notes_generated = False
+            if 'chat_history' not in st.session_state:
+                st.session_state.chat_history = []
+            if 'current_notes' not in st.session_state:
+                st.session_state.current_notes = ""
+            if 'extracted_topics' not in st.session_state:
+                st.session_state.extracted_topics = []
     
     def render_header(self):
         """Render the main header"""
-        st.markdown('<h1 class="main-header">📚 Canvas LMS Course Explorer</h1>', unsafe_allow_html=True)
-        st.markdown("---")
+        st.markdown("""
+        <div class="main-header">
+            <h1 style="margin: 0; font-size: 2.5rem;">🎓 Canvas LMS Explorer + RAG Demo</h1>
+            <p style="margin: 10px 0 0 0; opacity: 0.9; font-size: 1.1rem;">Explore your courses and enhance learning with AI</p>
+        </div>
+        """, unsafe_allow_html=True)
     
     def render_login_section(self):
         """Render the login section"""
@@ -450,12 +529,12 @@ class CanvasCourseExplorer:
                 st.sidebar.write(f"**User:** {st.session_state.user_info.get('name', 'Unknown')}")
                 st.sidebar.write(f"**ID:** {st.session_state.user_info.get('id', 'Unknown')}")
             
-            # Navdeep status indicator
+            # RAG Demo status indicator
             st.sidebar.markdown("---")
-            if NAVDEEP_AVAILABLE:
-                st.sidebar.success("🤖 AI Components: Available")
+            if RAG_AVAILABLE:
+                st.sidebar.success("🤖 RAG Demo: Available")
             else:
-                st.sidebar.error("🤖 AI Components: Not Available")
+                st.sidebar.error("🤖 RAG Demo: Not Available")
             
             if st.sidebar.button("🚪 Logout", type="secondary"):
                 self.logout()
@@ -677,6 +756,7 @@ class CanvasCourseExplorer:
     
     def render_workflow_status(self):
         """Render enhanced workflow progress indicator with actionable insights"""
+        global NAVDEEP_AVAILABLE
         course = st.session_state.selected_course
         course_data = st.session_state.course_data
         
@@ -2735,13 +2815,14 @@ class CanvasCourseExplorer:
     
     def render_ai_notes_section(self):
         """Render AI Notes section with course file selection and AI processing"""
+        global NAVDEEP_AVAILABLE
         st.header("🤖 AI-Powered Note Generation")
         
         if not NAVDEEP_AVAILABLE:
             st.error("❌ navdeep components are not available. Please ensure the navdeep folder is properly integrated.")
             st.info("💡 To fix this issue:")
             st.markdown("""
-            1. Ensure the navdeep folder exists at `/Users/praveenbhandari/sf-vibe/navdeep/`
+            1. Ensure the navdeep folder exists at `/Users/praveenbhandari/sf-vibe copy/navdeep/`
             2. Install required dependencies: `pip install PyPDF2 python-docx faiss-cpu sentence-transformers numpy openai youtube-transcript-api`
             3. Restart the Streamlit app
             """)
@@ -3439,6 +3520,226 @@ class CanvasCourseExplorer:
             - AI notes are saved to: `downloads/ai_notes/`
             """)
     
+    def render_rag_demo_section(self):
+        """Render the RAG Demo section with document ingestion and chatbot"""
+        if not RAG_AVAILABLE:
+            st.error("RAG Demo components not available")
+            return
+            
+        st.header("🤖 RAG Demo - AI Learning Assistant")
+        st.markdown("Upload documents or YouTube videos to create an AI-powered learning experience.")
+        
+        # Create tabs for different RAG features
+        rag_tab1, rag_tab2, rag_tab3, rag_tab4 = st.tabs(["📄 Document Ingestion", "📝 AI Notes", "💬 QA Chatbot", "🔗 Resources"])
+        
+        with rag_tab1:
+            self.render_document_ingestion()
+        
+        with rag_tab2:
+            self.render_ai_notes_generation()
+        
+        with rag_tab3:
+            self.render_qa_chatbot()
+        
+        with rag_tab4:
+            self.render_rag_resources_tab()
+    
+    def render_document_ingestion(self):
+        """Render document ingestion interface"""
+        st.subheader("📄 Document Ingestion")
+        
+        # File upload
+        uploaded_files = st.file_uploader(
+            "Upload documents (PDF, DOCX, TXT)",
+            type=['pdf', 'docx', 'txt'],
+            accept_multiple_files=True,
+            help="Upload course materials for AI processing"
+        )
+        
+        # YouTube URL input
+        youtube_url = st.text_input(
+            "YouTube URL (optional)",
+            placeholder="https://www.youtube.com/watch?v=...",
+            help="Add educational videos to your knowledge base"
+        )
+        
+        if st.button("🚀 Process Documents", type="primary"):
+            if uploaded_files or youtube_url:
+                with st.spinner("Processing documents..."):
+                    try:
+                        # Process uploaded files
+                        if uploaded_files:
+                            for file in uploaded_files:
+                                # Save uploaded file
+                                file_path = f"temp_{file.name}"
+                                with open(file_path, "wb") as f:
+                                    f.write(file.getbuffer())
+                                
+                                # Extract text
+                                text = extract_text_from_file(file_path)
+                                if text:
+                                    st.session_state.uploaded_files.append({
+                                        'name': file.name,
+                                        'text': text,
+                                        'type': 'document'
+                                    })
+                                
+                                # Clean up temp file
+                                os.remove(file_path)
+                        
+                        # Process YouTube URL
+                        if youtube_url:
+                            try:
+                                transcript = get_youtube_transcript(youtube_url)
+                                if transcript:
+                                    st.session_state.uploaded_files.append({
+                                        'name': f"YouTube: {youtube_url}",
+                                        'text': transcript,
+                                        'type': 'video'
+                                    })
+                            except Exception as e:
+                                st.error(f"Error processing YouTube URL: {e}")
+                        
+                        st.success(f"✅ Processed {len(uploaded_files) + (1 if youtube_url else 0)} items")
+                        st.rerun()
+                        
+                    except Exception as e:
+                        st.error(f"Error processing documents: {e}")
+            else:
+                st.warning("Please upload files or provide a YouTube URL")
+        
+        # Show uploaded files
+        if st.session_state.uploaded_files:
+            st.subheader("📚 Uploaded Content")
+            for i, file_info in enumerate(st.session_state.uploaded_files):
+                with st.expander(f"{file_info['type'].title()}: {file_info['name']}"):
+                    st.write(f"Content preview: {file_info['text'][:200]}...")
+                    if st.button(f"🗑️ Remove", key=f"remove_{i}"):
+                        st.session_state.uploaded_files.pop(i)
+                        st.rerun()
+    
+    def render_ai_notes_generation(self):
+        """Render AI notes generation interface"""
+        st.subheader("📝 AI Notes Generation")
+        
+        if not st.session_state.uploaded_files:
+            st.info("Upload documents first to generate AI notes")
+            return
+        
+        if st.button("🤖 Generate AI Notes", type="primary"):
+            with st.spinner("Generating AI notes..."):
+                try:
+                    # Combine all uploaded content
+                    combined_text = "\n\n".join([f['text'] for f in st.session_state.uploaded_files])
+                    
+                    # Generate notes using the AI pipeline
+                    notes = generate_notes_from_text(combined_text)
+                    st.session_state.current_notes = notes
+                    st.session_state.notes_generated = True
+                    
+                    # Extract topics for resources
+                    topics = extract_topics_from_text(combined_text)
+                    st.session_state.extracted_topics = topics
+                    
+                    st.success("✅ AI notes generated successfully!")
+                    
+                except Exception as e:
+                    st.error(f"Error generating notes: {e}")
+        
+        # Display generated notes
+        if st.session_state.notes_generated and st.session_state.current_notes:
+            st.subheader("📄 Generated Notes")
+            st.markdown(st.session_state.current_notes)
+            
+            # Download notes
+            st.download_button(
+                label="📥 Download Notes",
+                data=st.session_state.current_notes,
+                file_name="ai_generated_notes.md",
+                mime="text/markdown"
+            )
+    
+    def render_qa_chatbot(self):
+        """Render QA chatbot interface"""
+        st.subheader("💬 QA Chatbot")
+        
+        if not st.session_state.uploaded_files:
+            st.info("Upload documents first to use the chatbot")
+            return
+        
+        # Chat interface
+        for message in st.session_state.chat_history:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+        
+        # Chat input
+        if prompt := st.chat_input("Ask a question about your documents..."):
+            # Add user message
+            st.session_state.chat_history.append({"role": "user", "content": prompt})
+            
+            with st.chat_message("user"):
+                st.markdown(prompt)
+            
+            # Generate response
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    try:
+                        # Combine uploaded content for context
+                        context = "\n\n".join([f['text'] for f in st.session_state.uploaded_files])
+                        
+                        # Generate response using semantic search and QA
+                        response = answer_question_with_context(prompt, context)
+                        st.markdown(response)
+                        
+                        # Add assistant response
+                        st.session_state.chat_history.append({"role": "assistant", "content": response})
+                        
+                    except Exception as e:
+                        error_msg = f"Sorry, I encountered an error: {e}"
+                        st.markdown(error_msg)
+                        st.session_state.chat_history.append({"role": "assistant", "content": error_msg})
+        
+        # Clear chat button
+        if st.button("🗑️ Clear Chat"):
+            st.session_state.chat_history = []
+            st.rerun()
+    
+    def render_rag_resources_tab(self):
+        """Render recommended resources based on extracted topics"""
+        st.subheader("🔗 Recommended Resources")
+        
+        if not st.session_state.extracted_topics:
+            st.info("Generate AI notes first to see recommended resources")
+            return
+        
+        st.markdown("Based on your uploaded content, here are some recommended resources:")
+        
+        for topic in st.session_state.extracted_topics[:5]:  # Show top 5 topics
+            with st.expander(f"📚 {topic}"):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("**📺 Recommended Videos**")
+                    # This would integrate with YouTube API or use predefined resources
+                    st.markdown(f"• [Introduction to {topic}](https://youtube.com/search?q={topic.replace(' ', '+')})")
+                    st.markdown(f"• [Advanced {topic}](https://youtube.com/search?q=advanced+{topic.replace(' ', '+')})")
+                
+                with col2:
+                    st.markdown("**📄 Recommended Articles**")
+                    # This would integrate with academic databases or use predefined resources
+                    st.markdown(f"• [Wikipedia: {topic}](https://en.wikipedia.org/wiki/{topic.replace(' ', '_')})")
+                    st.markdown(f"• [Khan Academy: {topic}](https://www.khanacademy.org/search?search_again=1&page_search_query={topic.replace(' ', '+')})")
+        
+        if st.button("🔍 Explain connections between topics"):
+            with st.spinner("Analyzing topic relationships..."):
+                try:
+                    # Generate explanation of how topics connect
+                    topics_text = ", ".join(st.session_state.extracted_topics[:5])
+                    explanation = f"The main topics in your content ({topics_text}) are interconnected through various academic and practical relationships. Understanding these connections can help you build a more comprehensive knowledge framework."
+                    st.info(explanation)
+                except Exception as e:
+                    st.error(f"Error analyzing connections: {e}")
+    
     def run(self):
         """Main app runner"""
         self.initialize_session_state()
@@ -3455,7 +3756,10 @@ class CanvasCourseExplorer:
                 self.render_course_overview()
                 self.render_workflow_status()
                 
-                tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📝 Assignments", "📚 Modules", "📁 Files", "📊 Export", "⬇️ Download", "🤖 AI Notes"])
+                if RAG_AVAILABLE:
+                    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📝 Assignments", "📚 Modules", "📁 Files", "📊 Export", "⬇️ Download", "🤖 AI Notes", "💬 RAG Demo"])
+                else:
+                    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📝 Assignments", "📚 Modules", "📁 Files", "📊 Export", "⬇️ Download", "🤖 AI Notes"])
                 
                 with tab1:
                     self.render_assignments_section()
@@ -3473,7 +3777,15 @@ class CanvasCourseExplorer:
                     self.render_enhanced_download_section()
                 
                 with tab6:
-                    self.render_ai_notes_section()
+                    if RAG_AVAILABLE:
+                        self.render_ai_notes_section()
+                    else:
+                        st.error("🤖 RAG Demo components not available. Please check dependencies.")
+                        st.info("Install required packages: pip install sentence-transformers chromadb")
+                
+                if RAG_AVAILABLE:
+                    with tab7:
+                        self.render_rag_demo_section()
         else:
             # Show instructions when not authenticated
             st.markdown("""
