@@ -78,9 +78,11 @@ try:
     navdeep_path = "/Users/praveenbhandari/sf-vibe copy/navdeep/src"
     if navdeep_path not in sys.path:
         sys.path.append(navdeep_path)
-    from navdeep.text_extraction import TextExtractionPipeline
+    from pipelines.text_extraction_pipeline import TextExtractionPipeline
     NAVDEEP_AVAILABLE = True
-except ImportError:
+except ImportError as e:
+    NAVDEEP_AVAILABLE = False
+except Exception as e:
     NAVDEEP_AVAILABLE = False
 
 # Page configuration
@@ -508,6 +510,8 @@ class CanvasCourseExplorer:
                 st.session_state.current_notes = ""
             if 'extracted_topics' not in st.session_state:
                 st.session_state.extracted_topics = []
+            if 'rag_selected_files' not in st.session_state:
+                st.session_state.rag_selected_files = []
     
     def render_header(self):
         """Render the main header"""
@@ -3548,13 +3552,68 @@ class CanvasCourseExplorer:
         """Render document ingestion interface"""
         st.subheader("📄 Document Ingestion")
         
-        # File upload
-        uploaded_files = st.file_uploader(
-            "Upload documents (PDF, DOCX, TXT)",
-            type=['pdf', 'docx', 'txt'],
-            accept_multiple_files=True,
-            help="Upload course materials for AI processing"
-        )
+        # Course files browser (replacing file upload)
+        st.markdown("### 📁 Course Files")
+        
+        downloads_dir = os.path.join(os.path.dirname(__file__), 'downloads')
+        
+        if not os.path.exists(downloads_dir):
+            st.warning("📁 No downloads folder found. Please download some course files first.")
+            st.info("💡 Go to the 'Download Files' tab to download course materials first.")
+            return
+        
+        # Get all course folders
+        course_folders = [f for f in os.listdir(downloads_dir) 
+                         if os.path.isdir(os.path.join(downloads_dir, f))]
+        
+        if not course_folders:
+            st.warning("📁 No course folders found in downloads.")
+            st.info("💡 Go to the 'Download Files' tab to download course materials first.")
+            return
+        
+        # Course selection with expandable view
+        selected_files = []
+        
+        for course_folder in course_folders:
+            course_path = os.path.join(downloads_dir, course_folder)
+            
+            with st.expander(f"📚 {course_folder}", expanded=False):
+                # Get files in this course folder
+                try:
+                    files = [f for f in os.listdir(course_path) 
+                            if os.path.isfile(os.path.join(course_path, f)) and 
+                            f.lower().endswith(('.pdf', '.docx', '.txt'))]
+                    
+                    if files:
+                        st.markdown(f"**Found {len(files)} supported files:**")
+                        
+                        for file_name in sorted(files):
+                            file_path = os.path.join(course_path, file_name)
+                            
+                            # File selection checkbox
+                            if st.checkbox(f"📄 {file_name}", key=f"rag_select_{course_folder}_{file_name}"):
+                                selected_files.append({
+                                    'name': file_name,
+                                    'path': file_path,
+                                    'course': course_folder
+                                })
+                    else:
+                        st.write("No supported files (PDF, DOCX, TXT) found in this course.")
+                        
+                except Exception as e:
+                    st.error(f"Error reading course folder: {e}")
+        
+        # Store selected files in session state
+        if selected_files:
+            st.session_state.rag_selected_files = selected_files
+            st.success(f"✅ Selected {len(selected_files)} files for processing")
+            
+            # Show selected files summary
+            with st.expander("📋 Selected Files Summary", expanded=True):
+                for file_info in selected_files:
+                    st.write(f"• **{file_info['name']}** from {file_info['course']}")
+        else:
+            st.session_state.rag_selected_files = []
         
         # YouTube URL input
         youtube_url = st.text_input(
@@ -3564,28 +3623,30 @@ class CanvasCourseExplorer:
         )
         
         if st.button("🚀 Process Documents", type="primary"):
-            if uploaded_files or youtube_url:
+            selected_files = st.session_state.get('rag_selected_files', [])
+            
+            if selected_files or youtube_url:
                 with st.spinner("Processing documents..."):
                     try:
-                        # Process uploaded files
-                        if uploaded_files:
-                            for file in uploaded_files:
-                                # Save uploaded file
-                                file_path = f"temp_{file.name}"
-                                with open(file_path, "wb") as f:
-                                    f.write(file.getbuffer())
-                                
-                                # Extract text
-                                text = extract_text_from_file(file_path)
-                                if text:
-                                    st.session_state.uploaded_files.append({
-                                        'name': file.name,
-                                        'text': text,
-                                        'type': 'document'
-                                    })
-                                
-                                # Clean up temp file
-                                os.remove(file_path)
+                        # Process selected course files
+                        if selected_files:
+                            for file_info in selected_files:
+                                # Extract text from course file using navdeep TextExtractionPipeline
+                                if NAVDEEP_AVAILABLE:
+                                    pipeline = TextExtractionPipeline()
+                                    result = pipeline.extract_from_file(file_info['path'])
+                                    
+                                    if result.get('success') and result.get('full_text'):
+                                        text = result['full_text']
+                                        st.session_state.uploaded_files.append({
+                                            'name': f"{file_info['name']} ({file_info['course']})",
+                                            'text': text,
+                                            'type': 'course_document'
+                                        })
+                                    else:
+                                        st.warning(f"⚠️ Could not extract text from {file_info['name']}")
+                                else:
+                                    st.error("Navdeep TextExtractionPipeline not available")
                         
                         # Process YouTube URL
                         if youtube_url:
@@ -3600,19 +3661,25 @@ class CanvasCourseExplorer:
                             except Exception as e:
                                 st.error(f"Error processing YouTube URL: {e}")
                         
-                        st.success(f"✅ Processed {len(uploaded_files) + (1 if youtube_url else 0)} items")
+                        st.success(f"✅ Processed {len(selected_files) + (1 if youtube_url else 0)} items")
                         st.rerun()
                         
                     except Exception as e:
                         st.error(f"Error processing documents: {e}")
             else:
-                st.warning("Please upload files or provide a YouTube URL")
+                st.warning("Please select course files or provide a YouTube URL")
         
-        # Show uploaded files
+        # Show processed files
         if st.session_state.uploaded_files:
-            st.subheader("📚 Uploaded Content")
+            st.subheader("📚 Processed Content")
             for i, file_info in enumerate(st.session_state.uploaded_files):
-                with st.expander(f"{file_info['type'].title()}: {file_info['name']}"):
+                file_type_display = {
+                    'course_document': '📄 Course Document',
+                    'video': '🎥 Video',
+                    'document': '📄 Document'
+                }.get(file_info['type'], file_info['type'].title())
+                
+                with st.expander(f"{file_type_display}: {file_info['name']}"):
                     st.write(f"Content preview: {file_info['text'][:200]}...")
                     if st.button(f"🗑️ Remove", key=f"remove_{i}"):
                         st.session_state.uploaded_files.pop(i)
