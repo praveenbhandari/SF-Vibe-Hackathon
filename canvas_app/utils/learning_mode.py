@@ -82,8 +82,19 @@ def generate_assignment(topic: str, notes_sections: List[str]) -> str:
 
 
 def recommend_youtube(topic: str) -> List[Dict[str, str]]:
-    q = f"{topic} tutorial"
-    return _yt_search(q, limit=3)
+    """Recommend YouTube videos using DuckDuckGo search"""
+    try:
+        from .web_search import recommend_youtube_ddg
+        return recommend_youtube_ddg(topic, limit=3)
+    except Exception as e:
+        print(f"Error with DuckDuckGo YouTube search: {e}")
+        # Fallback to yt-dlp if available
+        try:
+            q = f"{topic} tutorial"
+            return _yt_search(q, limit=3)
+        except Exception as e2:
+            print(f"Error with yt-dlp fallback: {e2}")
+            return []
 
 
 def detect_learning_preference(user_input: str) -> Dict[str, str]:
@@ -188,6 +199,8 @@ def adaptive_learning_response(
     
     # Extract topic for resource recommendations
     topic = user_input
+    
+    # Try to find a more specific topic from notes sections
     for section in notes_sections:
         if any(word in user_input.lower() for word in section.lower().split()[:5]):
             for line in section.splitlines():
@@ -196,13 +209,30 @@ def adaptive_learning_response(
                     break
             break
     
-    # Recommend resources based on preferences
-    if prefs.get("preferred_content_type") in ["videos", None]:
-        resources["videos"] = recommend_youtube(topic)
+    # If no specific topic found, use the user input as topic
+    if not topic or topic == user_input:
+        # Clean up the topic for better search results
+        topic = user_input.strip()
+        # Remove common question words to get better search results
+        question_words = ['what', 'how', 'can', 'could', 'would', 'should', 'is', 'are', 'do', 'does', 'did', 'will', 'tell', 'me', 'about', 'explain', 'show']
+        words = topic.lower().split()
+        topic_words = [word for word in words if word not in question_words]
+        if topic_words:
+            topic = ' '.join(topic_words)
     
-    if prefs.get("preferred_content_type") in ["articles", None]:
+    # Always recommend resources for any topic
+    try:
+        resources["videos"] = recommend_youtube(topic)
+    except Exception as e:
+        print(f"Error fetching YouTube videos: {e}")
+        resources["videos"] = []
+    
+    try:
         from .web_search import recommend_articles_ddg
         resources["articles"] = recommend_articles_ddg(topic)
+    except Exception as e:
+        print(f"Error fetching articles: {e}")
+        resources["articles"] = []
     
     # Generate assignments/projects based on preferences
     if prefs.get("project_preference") in ["small_assignments", None]:

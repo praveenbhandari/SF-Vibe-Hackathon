@@ -5429,9 +5429,16 @@ class CanvasCourseExplorer:
                                     if value:
                                         st.write(f"**{key.replace('_', ' ').title()}**: {value}")
                         
-                        # Display resources
-                        if resources:
-                            self.display_learning_resources(resources)
+                        # Display resources (always show, even if empty)
+                        self.display_learning_resources(resources)
+                        
+                        # Debug information
+                        if st.checkbox("🔍 Show Debug Info", key="debug_resources"):
+                            st.write("**Resources Debug:**")
+                            st.write(f"Videos: {len(resources.get('videos', []))}")
+                            st.write(f"Articles: {len(resources.get('articles', []))}")
+                            st.write(f"Topic used: {topic}")
+                            st.write(f"Full resources: {resources}")
                         
                         # Display quiz if available
                         if quiz_content:
@@ -5497,10 +5504,11 @@ class CanvasCourseExplorer:
     
     def display_learning_resources(self, resources: Dict[str, Any]):
         """Display learning resources in an organized way"""
-        if not any(resources.values()):
-            return
-        
         st.markdown("### 📚 Recommended Resources")
+        
+        if not any(resources.values()):
+            st.info("🔍 No resources found. This might be due to network issues or the topic being too specific. Try rephrasing your question or check your internet connection.")
+            return
         
         # Videos
         if resources.get("videos"):
