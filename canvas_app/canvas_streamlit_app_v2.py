@@ -3558,7 +3558,7 @@ class CanvasCourseExplorer:
             self.render_course_file_selector_lms_style()
         
         with col2:
-            st.subheader("🤖 AI Processing")
+             st.subheader("🤖 AI Processing")
             self.render_ai_processing_panel_lms_style()
     
     def render_course_file_selector_lms_style(self):
@@ -5295,9 +5295,9 @@ class CanvasCourseExplorer:
                 # self.render_workflow_status()  # Commented out to hide workflow dashboard
                 
                 if RAG_AVAILABLE:
-                    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 Assignments", "📚 Modules", "📁 Files", "🤖 AI Notes", "💬 RAG Demo"])
+                    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📝 Assignments", "📚 Modules", "📁 Files", "🤖 AI Notes", "🎓 Guided Learning", "💬 RAG Demo"])
                 else:
-                    tab1, tab2, tab3, tab4 = st.tabs(["📝 Assignments", "📚 Modules", "📁 Files", "🤖 AI Notes"])
+                    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 Assignments", "📚 Modules", "📁 Files", "🤖 AI Notes", "🎓 Guided Learning"])
                 
                 with tab1:
                     self.render_assignments_section()
@@ -5315,8 +5315,11 @@ class CanvasCourseExplorer:
                         st.error("🤖 RAG Demo components not available. Please check dependencies.")
                         st.info("Install required packages: pip install sentence-transformers chromadb")
                 
+                with tab5:
+                    self.render_guided_learning_section()
+                
                 if RAG_AVAILABLE:
-                    with tab5:
+                    with tab6:
                         self.render_rag_demo_section()
         else:
             # Show instructions when not authenticated
@@ -5339,7 +5342,192 @@ class CanvasCourseExplorer:
             ### Note:
             This app focuses on data you have access to as a student. Some features like file downloads may not be available due to Canvas permissions.
             """)
+    
+    def render_guided_learning_section(self):
+        """Render the guided learning section with step-by-step learning"""
+        st.header("🎓 Guided Learning Assistant")
+        st.markdown("Learn any topic step-by-step with personalized content, YouTube videos, and articles!")
+        
+        # Initialize session state for guided learning
+        if 'learning_messages' not in st.session_state:
+            st.session_state.learning_messages = []
+        if 'learning_initialized' not in st.session_state:
+            st.session_state.learning_initialized = False
+        if 'learning_cooldown' not in st.session_state:
+            st.session_state.learning_cooldown = 0
+        
+        # Get notes sections for context
+        notes_sections = []
+        try:
+            # Try to get notes from AI notes cache first
+            if hasattr(st.session_state, 'ai_notes_cache') and st.session_state.ai_notes_cache:
+                for file_path, notes_data in st.session_state.ai_notes_cache.items():
+                    if isinstance(notes_data, dict) and 'notes' in notes_data:
+                        notes_sections.append(notes_data['notes'])
             
+            # If no notes available, show message
+            if not notes_sections:
+                st.info("💡 Generate AI notes first to enable guided learning with course content context!")
+                st.markdown("### Quick Start Learning")
+                st.markdown("You can still use guided learning without course notes. Just ask me about any topic!")
+        except Exception as e:
+            st.warning(f"Could not load course notes: {e}")
+        
+        # Learning interface
+        col1, col2 = st.columns([2, 1])
+            
+            with col1:
+            st.subheader("💬 Learning Chat")
+            
+            # Display conversation history
+            for message in st.session_state.learning_messages:
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
+            
+            # Chat input
+            user_input = st.chat_input("Ask me about any topic you want to learn...")
+            
+            if user_input:
+                import time
+                now = time.time()
+                
+                # Cooldown check
+                if now - st.session_state.learning_cooldown < 3.0:
+                    st.warning("Please wait a moment before sending another message.")
+                    st.stop()
+                
+                with st.spinner("Learning assistant is thinking..."):
+                    try:
+                        from utils.learning_mode import adaptive_learning_response
+                        
+                        # Get adaptive response
+                        adaptive_response = adaptive_learning_response(
+                            user_input, 
+                            notes_sections, 
+                            st.session_state.learning_messages, 
+                            profile_id="canvas_learner"
+                        )
+                        
+                        reply = adaptive_response["response"]
+                        resources = adaptive_response["resources"]
+                        quiz_content = adaptive_response.get("quiz", "")
+                        learning_prefs = adaptive_response.get("learning_preferences", {})
+                        
+                        # Add user message
+                        st.session_state.learning_messages.append({"role": "user", "content": user_input})
+                        
+                        # Add assistant response
+                        st.session_state.learning_messages.append({"role": "assistant", "content": reply})
+                        
+                        # Update cooldown
+                        st.session_state.learning_cooldown = now
+                        
+                        # Display learning preferences if detected
+                        if learning_prefs and any(learning_prefs.values()):
+                            with st.expander("🎯 Detected Learning Preferences", expanded=False):
+                                for key, value in learning_prefs.items():
+                                    if value:
+                                        st.write(f"**{key.replace('_', ' ').title()}**: {value}")
+                        
+                        # Display resources
+                        if resources:
+                            self.display_learning_resources(resources)
+                        
+                        # Display quiz if available
+                        if quiz_content:
+                            with st.expander("📝 Quick Quiz", expanded=False):
+                                st.markdown(quiz_content)
+                        
+                        st.rerun()
+                        
+                    except Exception as e:
+                        st.error(f"Error in learning assistant: {e}")
+                        st.session_state.learning_messages.append({"role": "user", "content": user_input})
+                        st.session_state.learning_messages.append({"role": "assistant", "content": "I'm sorry, I encountered an error. Please try again."})
+                        st.rerun()
+            
+            with col2:
+            st.subheader("📚 Learning Resources")
+            
+            # Topic-based recommendations
+            if notes_sections:
+                try:
+                    from utils.learning_mode import extract_topics_from_notes
+                    from utils.web_search import recommend_articles_ddg, recommend_youtube_ddg
+                    
+                    topics = extract_topics_from_notes(notes_sections)
+                    
+                    if topics:
+                        st.markdown("### Course Topics")
+                        for topic in topics[:5]:  # Show top 5 topics
+                            with st.expander(f"📖 {topic}", expanded=False):
+                                # Get videos and articles for this topic
+                                vlinks = recommend_youtube_ddg(topic, limit=2)
+                                alinks = recommend_articles_ddg(topic, limit=2)
+                                
+                                if vlinks:
+                                    st.markdown("**🎥 Videos:**")
+                                    for link in vlinks:
+                                        st.markdown(f"- [{link['title']}]({link['url']})")
+                                else:
+                                    st.write("No videos found for this topic.")
+                                
+                                if alinks:
+                                    st.markdown("**📄 Articles:**")
+                                    for link in alinks:
+                                        st.markdown(f"- [{link['title']}]({link['url']})")
+                                else:
+                                    st.write("No articles found for this topic.")
+                    else:
+                        st.info("No topics found in course notes.")
+                        
+                    except Exception as e:
+                    st.warning(f"Could not load topic recommendations: {e}")
+            else:
+                st.info("Generate AI notes to see topic-based recommendations!")
+            
+            # Learning suggestions
+            st.markdown("### 💡 Learning Tips")
+                st.markdown("""
+            - **Be specific**: Ask about particular concepts or topics
+            - **Mention preferences**: Say "I prefer videos" or "I like hands-on practice"
+            - **Ask for examples**: Request practical examples or use cases
+            - **Request quizzes**: Ask for practice questions to test understanding
+            """)
+    
+    def display_learning_resources(self, resources: Dict[str, Any]):
+        """Display learning resources in an organized way"""
+        if not any(resources.values()):
+            return
+        
+        st.markdown("### 📚 Recommended Resources")
+        
+        # Videos
+        if resources.get("videos"):
+            with st.expander("🎥 Video Tutorials", expanded=True):
+                for video in resources["videos"]:
+                    st.markdown(f"- [{video['title']}]({video['url']})")
+        
+        # Articles
+        if resources.get("articles"):
+            with st.expander("📄 Articles & Documentation", expanded=True):
+                for article in resources["articles"]:
+                    st.markdown(f"- [{article['title']}]({article['url']})")
+        
+        # Assignments
+        if resources.get("assignments"):
+            with st.expander("📝 Practice Assignments", expanded=True):
+                for assignment in resources["assignments"]:
+                    st.markdown(f"**{assignment['title']}**")
+                    st.markdown(assignment['content'])
+        
+        # Projects
+        if resources.get("projects"):
+            with st.expander("🚀 Project Ideas", expanded=True):
+                for project in resources["projects"]:
+                    st.markdown(f"**{project['title']}**")
+                    st.markdown(project['content'])
+
 
 def main():
     """Main function"""
