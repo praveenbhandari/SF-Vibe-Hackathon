@@ -515,22 +515,40 @@ class CanvasClient:
         files = []
         page = 1
         
-        while True:
-            params['page'] = page
-            response = self._make_request('GET', f'/api/v1/courses/{course_id}/files', params=params)
+        try:
+            while True:
+                params['page'] = page
+                response = self._make_request('GET', f'/api/v1/courses/{course_id}/files', params=params)
+                
+                if not response:
+                    break
+                
+                files.extend(response)
+                
+                if len(response) < 100:
+                    break
+                
+                page += 1
             
-            if not response:
-                break
+            logger.info(f"Retrieved {len(files)} files for course {course_id}")
+            return files
             
-            files.extend(response)
-            
-            if len(response) < 100:
-                break
-            
-            page += 1
-        
-        logger.info(f"Retrieved {len(files)} files for course {course_id}")
-        return files
+        except CanvasAPIError as e:
+            if 'forbidden' in str(e).lower() or 'insufficient permissions' in str(e).lower():
+                logger.error(f"Files access forbidden for course {course_id}: {e}")
+                # Provide detailed guidance for permission issues
+                raise CanvasAPIError(
+                    f"Access forbidden - insufficient permissions for course files.\n\n"
+                    f"Troubleshooting steps:\n"
+                    f"1. Check your Canvas API token permissions\n"
+                    f"2. Go to Canvas → Account → Settings → Approved Integrations\n"
+                    f"3. Ensure your token has 'Files' scope enabled\n"
+                    f"4. Verify you have access to course {course_id} files\n"
+                    f"5. Contact your Canvas administrator if permissions cannot be modified\n\n"
+                    f"Run the diagnostic tool: python canvas_permission_diagnostic.py {self.base_url} <your_token> {course_id}"
+                )
+            else:
+                raise e
     
     def get_file_download_url(self, file_id: int) -> str:
         """Get download URL for a specific file"""

@@ -18,7 +18,7 @@ from pathlib import Path
 from datetime import datetime
 import zipfile
 import io
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import logging
 import pandas as pd
 import re
@@ -27,6 +27,11 @@ from urllib.parse import urlparse, unquote, parse_qs
 import glob
 import tempfile
 import sys
+import numpy as np
+import hashlib
+import html
+import urllib.parse
+import subprocess
 
 from canvas_client import CanvasClient
 from canvas_config import CanvasConfig
@@ -38,7 +43,7 @@ try:
         sys.path.insert(0, send_to_friend_path)
     
     # Import from correct paths based on directory structure
-    from src.pipelines.text_extraction_pipeline import TextExtractionPipeline
+    # TextExtractionPipeline removed - using built-in method instead
     from src.utils.ingest import ingest_documents, semantic_search
     from src.utils.retrieval import mmr_retrieve
     from src.utils.rag_llm import answer_with_context
@@ -78,7 +83,7 @@ try:
     navdeep_path = "/Users/praveenbhandari/sf-vibe copy/navdeep/src"
     if navdeep_path not in sys.path:
         sys.path.append(navdeep_path)
-    from pipelines.text_extraction_pipeline import TextExtractionPipeline
+    # TextExtractionPipeline removed - using built-in method instead
     NAVDEEP_AVAILABLE = True
 except ImportError as e:
     NAVDEEP_AVAILABLE = False
@@ -637,6 +642,531 @@ class CanvasCourseExplorer:
             st.error(f"❌ Failed to load courses: {str(e)}")
             logger.error(f"Load courses error: {e}")
     
+    def _load_local_course_files(self, course_id: int):
+        """Load course files from local downloads directory"""
+        try:
+            downloads_dir = Path("downloads")
+            if not downloads_dir.exists():
+                return []
+            
+            # Look for course-specific folders
+            course_patterns = [
+                f"course_{course_id}_*",
+                f"*{course_id}*",
+                "*"  # Fallback to all folders
+            ]
+            
+            local_files = []
+            supported_extensions = ['.pdf', '.docx', '.doc', '.txt', '.pptx', '.ppsx', '.mp4', '.mp3']
+            
+            for pattern in course_patterns:
+                course_dirs = list(downloads_dir.glob(pattern))
+                if course_dirs:
+                    for course_dir in course_dirs:
+                        if course_dir.is_dir():
+                            for ext in supported_extensions:
+                                files = list(course_dir.rglob(f'*{ext}'))
+                                for file_path in files:
+                                    # Create file info similar to Canvas API format
+                                    file_info = {
+                                        'id': hash(str(file_path)),  # Generate unique ID
+                                        'display_name': file_path.name,
+                                        'filename': file_path.name,
+                                        'size': file_path.stat().st_size,
+                                        'content-type': self._get_content_type(file_path),
+                                        'url': str(file_path),
+                                        'created_at': datetime.fromtimestamp(file_path.stat().st_ctime).isoformat(),
+                                        'updated_at': datetime.fromtimestamp(file_path.stat().st_mtime).isoformat(),
+                                        'local_path': str(file_path),
+                                        'is_local': True
+                                    }
+                                    local_files.append(file_info)
+                    break  # Found course files, no need to check other patterns
+            
+            logger.info(f"Found {len(local_files)} local files for course {course_id}")
+            return local_files
+            
+        except Exception as e:
+            logger.warning(f"Could not load local files: {e}")
+            return []
+    
+    def _get_content_type(self, file_path: Path):
+        """Get content type based on file extension"""
+        ext = file_path.suffix.lower()
+        content_types = {
+            '.pdf': 'application/pdf',
+            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            '.doc': 'application/msword',
+            '.txt': 'text/plain',
+            '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            '.ppsx': 'application/vnd.ms-powerpoint',
+            '.mp4': 'video/mp4',
+            '.mp3': 'audio/mpeg'
+        }
+        return content_types.get(ext, 'application/octet-stream')
+    
+    # RAG and Memory Management Classes
+    class MemoryStore:
+        """Simple JSON-backed memory store for short-term and long-term memory."""
+        
+        def __init__(self, root_dir: str = "data/memory") -> None:
+            self.root_dir = root_dir
+            os.makedirs(self.root_dir, exist_ok=True)
+
+        def _lt_path(self, profile_id: str) -> str:
+            fname = f"long_term_{profile_id}.json"
+            return os.path.join(self.root_dir, fname)
+
+        def load_long_term(self, profile_id: str = "default") -> Dict[str, Any]:
+            path = self._lt_path(profile_id)
+            if not os.path.exists(path):
+                return {"facts": [], "topic_progress": {}}
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                return {"facts": [], "topic_progress": {}}
+
+        def save_long_term(self, data: Dict[str, Any], profile_id: str = "default") -> None:
+            path = self._lt_path(profile_id)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+
+        @staticmethod
+        def format_recent(messages: List[Dict[str, str]], window: int = 6) -> str:
+            recent = messages[-window:]
+            lines: List[str] = []
+            for m in recent:
+                role = m.get("role", "user")
+                content = m.get("content", "")
+                lines.append(f"{role}: {content}")
+            return "\n".join(lines)
+
+        def summarize_and_store_long_term(
+            self,
+            messages: List[Dict[str, str]],
+            profile_id: str = "default",
+            min_turns: int = 8,
+            max_turns: int = 16,
+        ) -> Optional[List[str]]:
+            """Summarize recent conversation into persistent facts and merge them into long-term memory."""
+            if len(messages) < min_turns:
+                return None
+            context_text = self.format_recent(messages, window=max_turns)
+            contexts = [{
+                "source": "conversation",
+                "chunk_index": 0,
+                "text": context_text,
+            }]
+            prompt = (
+                "From the conversation, extract persistent student facts/preferences/goals and any difficulties. "
+                "Output 3-6 concise bullet points. Avoid ephemeral content."
+            )
+            try:
+                resp = self._answer_with_context(prompt, contexts)
+            except Exception:
+                return None
+            # Parse bullets
+            facts = []
+            for line in resp.splitlines():
+                l = line.strip().lstrip("- ")
+                if l:
+                    facts.append(l)
+            if not facts:
+                return None
+            lt = self.load_long_term(profile_id)
+            existing = set(lt.get("facts", []))
+            changed = False
+            for f in facts:
+                if f not in existing:
+                    existing.add(f)
+                    changed = True
+            if changed:
+                lt["facts"] = list(existing)
+                self.save_long_term(lt, profile_id)
+                return facts
+            return None
+
+        def memory_contexts(
+            self,
+            messages: List[Dict[str, str]],
+            profile_id: str = "default",
+            short_window: int = 6,
+        ) -> List[Dict[str, Any]]:
+            """Build contexts representing short-term and long-term memory."""
+            contexts: List[Dict[str, Any]] = []
+            st_text = self.format_recent(messages, window=short_window)
+            if st_text:
+                contexts.append({"source": "memory:short_term", "chunk_index": 0, "text": st_text})
+            lt = self.load_long_term(profile_id)
+            facts = lt.get("facts", [])
+            if facts:
+                contexts.append({"source": "memory:long_term", "chunk_index": 0, "text": "\n".join(f"- {f}" for f in facts)})
+            return contexts
+
+        def _answer_with_context(self, query: str, contexts: List[Dict[str, Any]]) -> str:
+            """Simple context-based answer generation"""
+            context_text = "\n\n".join([f"[source: {c.get('source')}]\n{c.get('text', '')}" for c in contexts])
+            return f"Based on the context:\n\n{context_text}\n\nQuery: {query}\n\nAnswer: [This is a simplified response. For full RAG functionality, configure external LLM services.]"
+
+    # Web Search and Learning Mode Utilities
+    def recommend_articles_ddg(self, topic: str, limit: int = 3) -> List[Dict[str, str]]:
+        """Fetch simple article links from DuckDuckGo HTML endpoint."""
+        q = urllib.parse.quote(topic)
+        url = f"https://duckduckgo.com/html/?q={q}+tutorial"
+        try:
+            r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+            r.raise_for_status()
+            html_text = r.text
+            items: List[Dict[str, str]] = []
+            for m in re.finditer(r'<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', html_text, flags=re.I|re.S):
+                url = html.unescape(m.group(1))
+                title = re.sub(r"<.*?>", "", html.unescape(m.group(2))).strip()
+                if title and url and url.startswith("http"):
+                    items.append({"title": title, "url": url})
+                    if len(items) >= limit:
+                        break
+            return items
+        except Exception:
+            return []
+
+    def recommend_youtube_ddg(self, topic: str, limit: int = 3) -> List[Dict[str, str]]:
+        """Fetch YouTube video links from DuckDuckGo search."""
+        q = urllib.parse.quote(f"{topic} site:youtube.com")
+        url = f"https://duckduckgo.com/html/?q={q}"
+        try:
+            r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+            r.raise_for_status()
+            html_text = r.text
+            items: List[Dict[str, str]] = []
+            for m in re.finditer(r'<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', html_text, flags=re.I|re.S):
+                url = html.unescape(m.group(1))
+                title = re.sub(r"<.*?>", "", html.unescape(m.group(2))).strip()
+                if title and url and "youtube.com" in url and ("watch?v=" in url or "youtu.be/" in url):
+                    items.append({"title": title, "url": url})
+                    if len(items) >= limit:
+                        break
+            return items
+        except Exception:
+            return []
+
+    def extract_topics_from_notes(self, notes_sections: List[str]) -> List[str]:
+        """Extract topic headings (## or ###) from markdown sections."""
+        topics: List[str] = []
+        pattern = re.compile(r"^#{2,3}\s+(.+)$")
+        for sec in notes_sections:
+            for line in sec.splitlines():
+                m = pattern.match(line.strip())
+                if m:
+                    t = m.group(1).strip()
+                    if t and t not in topics:
+                        topics.append(t)
+        return topics
+
+    def build_topic_context(self, notes_sections: List[str], topic: str) -> List[Dict[str, Any]]:
+        """Build minimal context for LLM from notes related to a topic."""
+        context_texts: List[str] = []
+        for sec in notes_sections:
+            if topic.lower() in sec.lower():
+                context_texts.append(sec)
+        if not context_texts:
+            context_texts = notes_sections[:2]
+        contexts = []
+        for idx, t in enumerate(context_texts):
+            contexts.append({"source": "notes", "chunk_index": idx, "text": t})
+        return contexts
+
+    def _generate_simple_notes(self, text: str, title: str):
+        """Generate prettified notes from text with enhanced formatting"""
+        try:
+            from datetime import datetime
+            
+            # Enhanced text processing with better formatting
+            lines = text.split('\n')
+            processed_sections = []
+            current_section = []
+            section_title = None
+            
+            # Process text line by line
+            for i, line in enumerate(lines):
+                line = line.strip()
+                if not line:
+                    if current_section:
+                        current_section.append("")
+                    continue
+                
+                # Detect section headers (various patterns)
+                if self._is_section_header(line, i, lines):
+                    # Save previous section
+                    if current_section and section_title:
+                        section_content = self._format_section(section_title, current_section)
+                        processed_sections.append(section_content)
+                    
+                    # Start new section
+                    section_title = self._clean_header(line)
+                    current_section = []
+                else:
+                    current_section.append(line)
+            
+            # Process final section
+            if current_section and section_title:
+                section_content = self._format_section(section_title, current_section)
+                processed_sections.append(section_content)
+            
+            # If no sections detected, create a general structure
+            if not processed_sections:
+                processed_sections = [self._format_general_content(title, lines)]
+            
+            # Add metadata and summary
+            summary = self._generate_summary(text)
+            metadata = self._generate_metadata(title, text)
+            
+            # Combine everything
+            notes = f"# 📚 {title}\n\n"
+            notes += f"*Generated on {datetime.now().strftime('%Y-%m-%d %H:%M')}*\n\n"
+            notes += f"## 📋 Summary\n{summary}\n\n"
+            notes += f"## 📊 Document Info\n{metadata}\n\n"
+            notes += "---\n\n"
+            notes += "\n\n".join(processed_sections)
+            
+            return notes
+            
+        except Exception as e:
+            return f"# 📚 {title}\n\n❌ **Error generating notes:** {str(e)}\n\n## Raw Content\n```\n{text[:1000]}...\n```"
+    
+    def _is_section_header(self, line: str, index: int, all_lines: List[str]) -> bool:
+        """Detect if a line is likely a section header"""
+        # Common header patterns
+        header_patterns = [
+            r'^#{1,6}\s+',  # Markdown headers
+            r'^\d+\.?\s+[A-Z]',  # Numbered sections
+            r'^[A-Z][A-Z\s]{3,}$',  # ALL CAPS headers
+            r'^[A-Z][a-z]+\s+[A-Z]',  # Title Case headers
+            r'^\d+\.\d+',  # Decimal numbering
+            r'^Chapter\s+\d+',  # Chapter headers
+            r'^Section\s+\d+',  # Section headers
+            r'^Part\s+\d+',  # Part headers
+        ]
+        
+        import re
+        for pattern in header_patterns:
+            if re.match(pattern, line):
+                return True
+        
+        # Check if line is significantly shorter than average and followed by content
+        if len(line) < 50 and index < len(all_lines) - 1:
+            next_line = all_lines[index + 1].strip()
+            if next_line and len(next_line) > len(line) * 1.5:
+                return True
+        
+        return False
+    
+    def _clean_header(self, line: str) -> str:
+        """Clean and format section headers"""
+        import re
+        
+        # Remove markdown headers
+        line = re.sub(r'^#{1,6}\s+', '', line)
+        
+        # Remove numbering
+        line = re.sub(r'^\d+\.?\s*', '', line)
+        
+        # Clean up formatting
+        line = line.strip('*_`')
+        
+        # Convert to title case if all caps
+        if line.isupper() and len(line) > 3:
+            line = line.title()
+        
+        return line
+    
+    def _format_section(self, title: str, content: List[str]) -> str:
+        """Format a section with proper markdown structure"""
+        section = f"## 📖 {title}\n\n"
+        
+        # Process content within section
+        processed_content = []
+        in_list = False
+        in_code = False
+        
+        for line in content:
+            if not line.strip():
+                if in_list:
+                    processed_content.append("")
+                continue
+            
+            # Detect code blocks
+            if line.strip().startswith('```'):
+                in_code = not in_code
+                processed_content.append(line)
+                continue
+            
+            if in_code:
+                processed_content.append(line)
+                continue
+            
+            # Detect lists
+            if self._is_list_item(line):
+                if not in_list:
+                    processed_content.append("")
+                processed_content.append(f"- {self._clean_list_item(line)}")
+                in_list = True
+            else:
+                if in_list:
+                    processed_content.append("")
+                in_list = False
+                
+                # Format different types of content
+                formatted_line = self._format_content_line(line)
+                processed_content.append(formatted_line)
+        
+        section += '\n'.join(processed_content)
+        return section
+    
+    def _is_list_item(self, line: str) -> bool:
+        """Check if line is a list item"""
+        import re
+        list_patterns = [
+            r'^\s*[-*+]\s+',  # Bullet points
+            r'^\s*\d+\.\s+',  # Numbered lists
+            r'^\s*[a-zA-Z]\.\s+',  # Letter lists
+        ]
+        
+        for pattern in list_patterns:
+            if re.match(pattern, line):
+                return True
+        return False
+    
+    def _clean_list_item(self, line: str) -> str:
+        """Clean list item formatting"""
+        import re
+        # Remove bullet points and numbering
+        line = re.sub(r'^\s*[-*+]\s+', '', line)
+        line = re.sub(r'^\s*\d+\.\s+', '', line)
+        line = re.sub(r'^\s*[a-zA-Z]\.\s+', '', line)
+        return line.strip()
+    
+    def _format_content_line(self, line: str) -> str:
+        """Format individual content lines with appropriate styling"""
+        line_lower = line.lower()
+        
+        # Definitions
+        if any(keyword in line_lower for keyword in ['definition', 'define', 'what is', 'means']):
+            return f"**📖 Definition:** {line}"
+        
+        # Examples
+        if any(keyword in line_lower for keyword in ['example', 'for instance', 'such as', 'e.g.']):
+            return f"**💡 Example:** {line}"
+        
+        # Important notes
+        if any(keyword in line_lower for keyword in ['important', 'note', 'remember', 'key', 'critical']):
+            return f"⚠️ **Important:** {line}"
+        
+        # Steps or procedures
+        if any(keyword in line_lower for keyword in ['step', 'process', 'procedure', 'method']):
+            return f"**🔧 Step:** {line}"
+        
+        # Formulas or equations
+        if any(char in line for char in ['=', '+', '-', '*', '/', '^']) and len(line) < 100:
+            return f"**🧮 Formula:** `{line}`"
+        
+        # Questions
+        if line.strip().endswith('?'):
+            return f"**❓ Question:** {line}"
+        
+        # Regular content
+        return line
+    
+    def _format_general_content(self, title: str, lines: List[str]) -> str:
+        """Format content when no clear sections are detected"""
+        section = f"## 📄 Content Overview\n\n"
+        
+        # Group related lines
+        current_group = []
+        groups = []
+        
+        for line in lines:
+            if not line.strip():
+                if current_group:
+                    groups.append(current_group)
+                    current_group = []
+            else:
+                current_group.append(line)
+        
+        if current_group:
+            groups.append(current_group)
+        
+        # Format each group
+        for i, group in enumerate(groups):
+            if len(group) == 1:
+                section += f"{self._format_content_line(group[0])}\n\n"
+            else:
+                section += f"**Topic {i+1}:**\n"
+                for line in group:
+                    section += f"- {self._format_content_line(line)}\n"
+                section += "\n"
+        
+        return section
+    
+    def _generate_summary(self, text: str) -> str:
+        """Generate a brief summary of the content"""
+        # Simple extractive summary (first few sentences)
+        sentences = text.split('. ')
+        if len(sentences) <= 3:
+            return text
+        else:
+            summary_sentences = sentences[:3]
+            return '. '.join(summary_sentences) + "..."
+    
+    def _generate_metadata(self, title: str, text: str) -> str:
+        """Generate document metadata"""
+        word_count = len(text.split())
+        char_count = len(text)
+        line_count = len(text.split('\n'))
+        
+        return f"""
+- **Title:** {title}
+- **Word Count:** {word_count:,}
+- **Character Count:** {char_count:,}
+- **Lines:** {line_count:,}
+- **Estimated Reading Time:** {word_count // 200 + 1} minutes
+"""
+    
+    def _format_content_preview(self, text: str, filename: str) -> str:
+        """Format content preview with enhanced styling"""
+        try:
+            # Basic text processing for preview
+            lines = text.split('\n')
+            processed_lines = []
+            
+            # Add document header
+            processed_lines.append(f"# 📄 {filename}")
+            processed_lines.append("")
+            processed_lines.append("*Content Preview*")
+            processed_lines.append("")
+            
+            # Process content with basic formatting
+            for line in lines[:50]:  # Limit to first 50 lines for preview
+                line = line.strip()
+                if not line:
+                    processed_lines.append("")
+                    continue
+                
+                # Apply basic formatting
+                formatted_line = self._format_content_line(line)
+                processed_lines.append(formatted_line)
+            
+            # Add truncation notice if content is long
+            if len(lines) > 50:
+                processed_lines.append("")
+                processed_lines.append("---")
+                processed_lines.append("*Content truncated for preview...*")
+            
+            return '\n'.join(processed_lines)
+            
+        except Exception as e:
+            return f"# 📄 {filename}\n\n**Error formatting preview:** {str(e)}\n\n```\n{text[:500]}...\n```"
+
     def load_course_data(self, course_id: int):
         """Load comprehensive course data"""
         if not st.session_state.client:
@@ -665,12 +1195,8 @@ class CanvasCourseExplorer:
                 except Exception as e:
                     logger.warning(f"Could not load modules: {e}")
                 
-                # Load course files
-                try:
-                    files = st.session_state.client.get_course_files(course_id)
-                    course_data['files'] = files
-                except Exception as e:
-                    logger.warning(f"Could not load files: {e}")
+                # Load course files from local downloads directory instead of Canvas API
+                course_data['files'] = self._load_local_course_files(course_id)
                 
                 # Load users
                 try:
@@ -773,8 +1299,12 @@ class CanvasCourseExplorer:
         total_assignments = len(course_data.get('assignments', []))
         total_modules = len(course_data.get('modules', []))
         
+        # Check permission status
+        files_accessible = total_files > 0 or not any('forbidden' in str(e).lower() or 'insufficient permissions' in str(e).lower() 
+                                                    for e in [getattr(course_data, 'files_error', None)] if e)
+        
         # Calculate progress percentage
-        progress_steps = [True, True, files_exist, False]  # login, course, files, ai
+        progress_steps = [True, True, files_accessible, False]  # login, course, files, ai
         progress_percent = (sum(progress_steps) / len(progress_steps)) * 100
         
         # Enhanced workflow container
@@ -802,7 +1332,7 @@ class CanvasCourseExplorer:
                 background: rgba(255,255,255,0.2);
                 height: 8px;
                 border-radius: 4px;
-                margin-bottom: 2rem;
+                margin-bottom: 1rem;
                 overflow: hidden;
             ">
                 <div style="
@@ -812,6 +1342,20 @@ class CanvasCourseExplorer:
                     border-radius: 4px;
                     transition: width 0.3s ease;
                 "></div>
+            </div>
+            
+            <!-- Permission Status Indicator -->
+            <div style="
+                background: rgba(255,255,255,0.1);
+                padding: 10px;
+                border-radius: 8px;
+                margin-bottom: 1rem;
+                border-left: 3px solid {'#4CAF50' if files_accessible else '#FF9800'};
+            ">
+                <p style="color: rgba(255,255,255,0.9); margin: 0; font-size: 14px; font-weight: 500;">
+                    {'✅ Files Access: Available' if files_accessible else '⚠️ Files Access: Restricted - Check permissions'}
+                </p>
+                {f'<p style="color: rgba(255,255,255,0.7); margin: 5px 0 0 0; font-size: 12px;">Found {total_files} files</p>' if files_accessible else ''}
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -1654,6 +2198,10 @@ class CanvasCourseExplorer:
         
         files = st.session_state.course_data['files']
         
+        # Check if files are local
+        local_files = [f for f in files if f.get('is_local', False)]
+        api_files = [f for f in files if not f.get('is_local', False)]
+        
         # File statistics dashboard
         total_size = sum(f.get('size', 0) for f in files)
         file_types_count = len(set([f.get('content-type', 'Unknown').split('/')[0] for f in files]))
@@ -1667,6 +2215,14 @@ class CanvasCourseExplorer:
             total_size_str = f"{total_size / 1024:.1f} KB"
         else:
             total_size_str = f"{total_size} B"
+        
+        # Show file source status
+        # if local_files:
+        #     st.success(f"📁 **{len(local_files)} files loaded from local downloads directory** (No Canvas API permissions needed)")
+        # elif api_files:
+        #     st.info(f"🌐 **{len(api_files)} files loaded from Canvas API**")
+        # else:
+        #     st.warning("⚠️ No files found")
         
         col1, col2, col3, col4 = st.columns(4)
         
@@ -2933,9 +3489,33 @@ class CanvasCourseExplorer:
                         del st.session_state.ai_notes_cache[file_key]
                     st.rerun()
             
-            # Display cached notes
+            # Display cached notes with enhanced formatting
             st.markdown("### 📝 Generated Notes")
+            
+            # Create a beautiful container for the notes
+            st.markdown("""
+            <div style="
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                padding: 20px;
+                border-radius: 15px;
+                margin: 10px 0;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+            ">
+                <div style="
+                    background: white;
+                    padding: 20px;
+                    border-radius: 10px;
+                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                ">
+            """, unsafe_allow_html=True)
+            
             st.markdown(cached_notes)
+            
+            st.markdown("""
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
             
         else:
             st.info("🤖 No cached notes found for this file.")
@@ -2951,86 +3531,152 @@ class CanvasCourseExplorer:
                 file_path = selected_file['file_path']
                 
                 # Extract text from file
-                if TextExtractionPipeline:
-                    pipeline = TextExtractionPipeline()
-                    result = pipeline.extract_from_file(file_path)
+                result = self._extract_text_from_file(Path(file_path))
+                
+                if result.get('success') and result.get('full_text'):
+                    extracted_text = result['full_text']
+                    # Generate notes using built-in method
+                    notes = self._generate_simple_notes(extracted_text, selected_file['file_name'])
                     
-                    if result.get('success') and result.get('full_text'):
-                        extracted_text = result['full_text']
-                        # Generate notes using navdeep
-                        if generate_notes_from_text:
-                            notes = generate_notes_from_text(extracted_text)
-                            
-                            # Cache the notes
-                            st.session_state.ai_notes_cache[file_key] = notes
-                            
-                            st.success("✅ Notes generated successfully!")
-                            st.rerun()
-                        else:
-                            st.error("❌ Note generation function not available.")
-                    else:
-                        error_msg = result.get('error', 'Unknown error')
-                        
-                        # Enhanced logging for debugging
-                        logger.error(f"Text extraction failed for {file_path}: {error_msg}")
-                        logger.error(f"Full extraction result: {result}")
-                        
-                        # Categorize and provide specific error messages
-                        if 'EOF marker not found' in error_msg or 'PdfReadError' in error_msg:
-                            st.error(f"❌ Could not extract text from the file: PDF file is corrupted or has formatting issues")
-                            st.warning("💡 This PDF file appears to be corrupted or has formatting issues. Try with a different PDF file.")
-                        elif 'permission' in error_msg.lower() or 'denied' in error_msg.lower():
-                            st.error(f"❌ Could not extract text from the file: Permission denied")
-                            st.warning("💡 Permission denied. Make sure the file is not password-protected or in use by another application.")
-                        elif 'not found' in error_msg.lower() or 'FileNotFoundError' in error_msg:
-                            st.error(f"❌ Could not extract text from the file: File not found")
-                            st.warning("💡 File not found. Please make sure the file exists and try again.")
-                        elif 'Unsupported file type' in error_msg:
-                            st.error(f"❌ Could not extract text from the file: Unsupported file format")
-                            st.warning("💡 This file format is not supported. Try with TXT, PDF, DOCX, or PPTX files.")
-                        elif 'password' in error_msg.lower() or 'encrypted' in error_msg.lower():
-                            st.error(f"❌ Could not extract text from the file: Password-protected file")
-                            st.warning("💡 This file is password-protected. Please remove the password protection and try again.")
-                        elif 'empty' in error_msg.lower() or 'no text' in error_msg.lower():
-                            st.error(f"❌ Could not extract text from the file: No readable text found")
-                            st.warning("💡 This file appears to contain no readable text. It might be an image-based PDF or empty document.")
-                        else:
-                            # Improved fallback with debugging info
-                            st.error(f"❌ Could not extract text from the file: {error_msg}")
-                            st.warning("💡 Try with a different file format (TXT, DOCX, or another PDF).")
-                            # Show debug info in expander for troubleshooting
-                            with st.expander("🔍 Debug Information", expanded=False):
-                                st.code(f"Error details: {error_msg}\nFile: {file_path}\nResult: {result}")
+                    # Cache the notes
+                    st.session_state.ai_notes_cache[file_key] = notes
+                    
+                    st.success("✅ Notes generated successfully!")
+                    st.rerun()
                 else:
-                    st.error("❌ Text extraction pipeline not available.")
+                    error_msg = result.get('error', 'Unknown error')
                     
+                    # Enhanced logging for debugging
+                    logger.error(f"Text extraction failed for {file_path}: {error_msg}")
+                    logger.error(f"Full extraction result: {result}")
+                    
+                    # Categorize and provide specific error messages
+                    if 'EOF marker not found' in error_msg or 'PdfReadError' in error_msg:
+                        st.error(f"❌ Could not extract text from the file: PDF file is corrupted or has formatting issues")
+                        st.warning("💡 This PDF file appears to be corrupted or has formatting issues. Try with a different PDF file.")
+                    elif 'permission' in error_msg.lower() or 'denied' in error_msg.lower():
+                        st.error(f"❌ Could not extract text from the file: Permission denied")
+                        st.warning("💡 Permission denied. Make sure the file is not password-protected or in use by another application.")
+                    elif 'not found' in error_msg.lower() or 'FileNotFoundError' in error_msg:
+                        st.error(f"❌ Could not extract text from the file: File not found")
+                        st.warning("💡 File not found. Please make sure the file exists and try again.")
+                    elif 'Unsupported file type' in error_msg:
+                        st.error(f"❌ Could not extract text from the file: Unsupported file format")
+                        st.warning("💡 This file format is not supported. Try with TXT, PDF, DOCX, or PPTX files.")
+                    elif 'password' in error_msg.lower() or 'encrypted' in error_msg.lower():
+                        st.error(f"❌ Could not extract text from the file: Password-protected file")
+                        st.warning("💡 This file is password-protected. Please remove the password protection and try again.")
+                    elif 'empty' in error_msg.lower() or 'no text' in error_msg.lower():
+                        st.error(f"❌ Could not extract text from the file: No readable text found")
+                        st.warning("💡 This file appears to contain no readable text. It might be an image-based PDF or empty document.")
+                    else:
+                        # Improved fallback with debugging info
+                        st.error(f"❌ Could not extract text from the file: {error_msg}")
+                        st.warning("💡 Try with a different file format (TXT, DOCX, or another PDF).")
+                        # Show debug info in expander for troubleshooting
+                        with st.expander("🔍 Debug Information", expanded=False):
+                            st.code(f"Error details: {error_msg}\nFile: {file_path}\nResult: {result}")
         except Exception as e:
             st.error(f"❌ Error generating notes: {str(e)}")
+            logger.error(f"Notes generation error: {e}")
 
     
-    def process_files_for_notes(self, files: List[Path], title: str, embed_model: str, top_k: int, chunk_size: int, group_size: int):
-        """Process selected files and generate AI notes"""
+    def _extract_text_from_file(self, file_path: Path):
+        """Simple text extraction from local files"""
         try:
-            with st.spinner("Processing files and generating notes..."):
-                # Initialize text extraction pipeline
-                pipe = TextExtractionPipeline()
+            file_extension = file_path.suffix.lower()
+            
+            if file_extension == '.txt':
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    text = f.read()
+                return {'success': True, 'full_text': text, 'filename': file_path.name}
+            
+            elif file_extension == '.pdf':
+                try:
+                    import PyPDF2
+                    with open(file_path, 'rb') as f:
+                        reader = PyPDF2.PdfReader(f)
+                        text = ""
+                        for page in reader.pages:
+                            text += page.extract_text() + "\n"
+                    return {'success': True, 'full_text': text, 'filename': file_path.name}
+                except ImportError:
+                    return {'success': False, 'error': 'PyPDF2 not installed. Install with: pip install PyPDF2'}
+                except Exception as e:
+                    return {'success': False, 'error': f'PDF extraction failed: {str(e)}'}
+            
+            elif file_extension in ['.docx']:
+                try:
+                    import docx
+                    doc = docx.Document(file_path)
+                    text = "\n".join([paragraph.text for paragraph in doc.paragraphs])
+                    return {'success': True, 'full_text': text, 'filename': file_path.name}
+                except ImportError:
+                    return {'success': False, 'error': 'python-docx not installed. Install with: pip install python-docx'}
+                except Exception as e:
+                    return {'success': False, 'error': f'DOCX extraction failed: {str(e)}'}
+            
+            elif file_extension in ['.pptx']:
+                try:
+                    from pptx import Presentation
+                    prs = Presentation(file_path)
+                    text = ""
+                    for slide in prs.slides:
+                        for shape in slide.shapes:
+                            if hasattr(shape, "text"):
+                                text += shape.text + "\n"
+                    return {'success': True, 'full_text': text, 'filename': file_path.name}
+                except ImportError:
+                    return {'success': False, 'error': 'python-pptx not installed. Install with: pip install python-pptx'}
+                except Exception as e:
+                    return {'success': False, 'error': f'PPTX extraction failed: {str(e)}'}
+            
+            else:
+                return {'success': False, 'error': f'Unsupported file type: {file_extension}'}
                 
-                # Extract text from files
+        except Exception as e:
+            return {'success': False, 'error': f'File extraction failed: {str(e)}'}
+
+    def process_files_for_notes(self, files: List[Path], title: str, embed_model: str, top_k: int, chunk_size: int, group_size: int):
+        """Process local files and generate AI notes"""
+        try:
+            with st.spinner("Processing local files and generating notes..."):
+                # Extract text from local files
                 extraction_results = []
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 
-                for i, file_path in enumerate(files):
-                    status_text.text(f"Extracting text from: {file_path.name}")
+                # Filter for existing local files
+                existing_files = [f for f in files if f.exists()]
+                if not existing_files:
+                    st.error("❌ No local files found. Please download files first using the Download section.")
+                    st.info("💡 **Tip:** Use the 'Download Files from JSON Exports' section to get files locally before processing.")
+                    return
+                
+                if len(existing_files) < len(files):
+                    missing_files = [f for f in files if not f.exists()]
+                    st.warning(f"⚠️ {len(missing_files)} files not found locally. Processing {len(existing_files)} available files.")
+                
+                for i, file_path in enumerate(existing_files):
+                    status_text.text(f"Extracting text from local file: {file_path.name}")
                     
                     try:
-                        result = pipe.extract_from_file(str(file_path))
+                        # Check file size
+                        file_size = file_path.stat().st_size
+                        if file_size == 0:
+                            st.warning(f"⚠️ Skipping {file_path.name}: Empty file")
+                            continue
+                        
+                        result = self._extract_text_from_file(file_path)
                         if result.get('success'):
+                            # Add local file metadata
+                            result['local_file_path'] = str(file_path)
+                            result['file_size'] = file_size
                             extraction_results.append(result)
                         else:
                             error_msg = result.get('error', 'Unknown error')
                             
-                            # Enhanced error categorization for batch processing
+                            # Enhanced error categorization for local files
                             if 'EOF marker not found' in error_msg or 'PdfReadError' in error_msg:
                                 st.warning(f"⚠️ Skipping {file_path.name}: PDF file is corrupted or has formatting issues")
                             elif 'permission' in error_msg.lower() or 'denied' in error_msg.lower():
@@ -3042,79 +3688,106 @@ class CanvasCourseExplorer:
                             elif 'empty' in error_msg.lower() or 'no text' in error_msg.lower():
                                 st.warning(f"⚠️ Skipping {file_path.name}: No readable text found")
                             else:
-                                st.warning(f"⚠️ Failed to extract from {file_path.name}: {error_msg}")
+                                st.warning(f"⚠️ Failed to extract from local file {file_path.name}: {error_msg}")
                     except Exception as e:
-                        st.warning(f"⚠️ Failed to extract from {file_path.name}: {e}")
+                        st.warning(f"⚠️ Failed to extract from local file {file_path.name}: {e}")
                     
-                    progress_bar.progress((i + 1) / len(files))
+                    progress_bar.progress((i + 1) / len(existing_files))
                 
                 if not extraction_results:
-                    st.error("❌ No files were successfully processed")
+                    st.error("❌ No local files were successfully processed")
+                    st.info("💡 **Tip:** Make sure files are downloaded locally and are not password-protected or corrupted.")
                     return
                 
-                status_text.text("Ingesting documents into vector store...")
+                # Show processing summary
+                st.success(f"✅ Successfully processed {len(extraction_results)} local files")
                 
-                # Ingest documents
-                vector_store = ingest_documents(extraction_results, model_name=embed_model)
+                # Display file processing summary
+                with st.expander("📊 Local File Processing Summary", expanded=True):
+                    total_size = sum(result.get('file_size', 0) for result in extraction_results)
+                    st.write(f"**Files Processed:** {len(extraction_results)}")
+                    st.write(f"**Total Size:** {total_size / (1024*1024):.2f} MB")
+                    st.write(f"**Model:** {embed_model}")
+                    st.write(f"**Chunk Size:** {chunk_size}")
+                    st.write(f"**Group Size:** {group_size}")
+                    
+                    # Show processed files
+                    st.write("**Processed Local Files:**")
+                    for result in extraction_results:
+                        file_size_mb = result.get('file_size', 0) / (1024 * 1024)
+                        st.write(f"• {Path(result.get('local_file_path', '')).name} ({file_size_mb:.2f} MB)")
                 
-                status_text.text("Generating AI notes...")
+                status_text.text("Generating AI notes from local files...")
                 
-                # Generate notes
-                # Get all text chunks from the extraction results
+                # Generate notes from extracted text
                 all_texts = []
                 for result in extraction_results:
                     if 'full_text' in result:
                         all_texts.append(result['full_text'])
                 
                 if all_texts:
-                    # Generate notes section by section
-                    st.subheader("📝 Generated Notes")
+                    # Simple note generation without external dependencies
+                    st.subheader("📝 Generated Notes from Local Files")
                     
-                    notes_container = st.container()
-                    sections = []
+                    # Combine all text
+                    combined_text = "\n\n".join(all_texts)
                     
-                    with notes_container:
-                        placeholder = st.empty()
-                        
-                        for idx, section in enumerate(iter_generate_notes_from_texts(all_texts, title=title, group_size=group_size), 1):
-                            sections.append(section)
-                            
-                            with placeholder.container():
-                                for i, s in enumerate(sections, 1):
-                                    with st.expander(f"Section {i}", expanded=(i == idx)):
-                                        st.markdown(s)
+                    # Simple text processing and note generation
+                    notes = self._generate_simple_notes(combined_text, title)
+                    
+                    # Display notes with enhanced formatting
+                    st.markdown("""
+                    <div style="
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        padding: 20px;
+                        border-radius: 15px;
+                        margin: 10px 0;
+                        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+                        border: 1px solid rgba(255, 255, 255, 0.2);
+                    ">
+                        <div style="
+                            background: white;
+                            padding: 20px;
+                            border-radius: 10px;
+                            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                        ">
+                    """, unsafe_allow_html=True)
+                    
+                    st.markdown(notes)
+                    
+                    st.markdown("""
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
                     
                     # Save notes to file
-                    if sections:
-                        combined_notes = "\n\n---\n\n".join(sections)
-                        
-                        # Create notes directory
-                        notes_dir = self.download_dir / "ai_notes"
-                        notes_dir.mkdir(exist_ok=True)
-                        
-                        # Save notes
-                        safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).rstrip()
-                        safe_title = safe_title.replace(' ', '_')
-                        notes_filename = f"{safe_title}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
-                        notes_filepath = notes_dir / notes_filename
-                        
-                        with open(notes_filepath, 'w', encoding='utf-8') as f:
-                            f.write(f"# {title}\n\n")
-                            f.write(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-                            f.write(f"Source files: {', '.join([f.name for f in files])}\n\n")
-                            f.write("---\n\n")
-                            f.write(combined_notes)
-                        
-                        st.success(f"✅ Notes saved to: {notes_filepath}")
-                        
-                        # Provide download button
-                        with open(notes_filepath, 'rb') as f:
-                            st.download_button(
-                                label="📥 Download Notes (Markdown)",
-                                data=f.read(),
-                                file_name=notes_filename,
-                                mime="text/markdown"
-                            )
+                    notes_dir = self.download_dir / "ai_notes"
+                    notes_dir.mkdir(exist_ok=True)
+                    
+                    # Save notes
+                    safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+                    safe_title = safe_title.replace(' ', '_')
+                    notes_filename = f"{safe_title}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+                    notes_filepath = notes_dir / notes_filename
+                    
+                    with open(notes_filepath, 'w', encoding='utf-8') as f:
+                        f.write(f"# {title}\n\n")
+                        f.write(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+                        f.write(f"Source: Local files\n")
+                        f.write(f"Files processed: {', '.join([Path(result.get('local_file_path', '')).name for result in extraction_results])}\n\n")
+                        f.write("---\n\n")
+                        f.write(notes)
+                    
+                    st.success(f"✅ Notes saved to: {notes_filepath}")
+                    
+                    # Provide download button
+                    with open(notes_filepath, 'rb') as f:
+                        st.download_button(
+                            label="📥 Download Notes (Markdown)",
+                            data=f.read(),
+                            file_name=notes_filename,
+                            mime="text/markdown"
+                        )
                 
                 status_text.text("Notes generation completed!")
                 
@@ -3525,28 +4198,442 @@ class CanvasCourseExplorer:
             """)
     
     def render_rag_demo_section(self):
-        """Render the RAG Demo section with document ingestion and chatbot"""
-        if not RAG_AVAILABLE:
-            st.error("RAG Demo components not available")
-            return
+        """Render enhanced RAG Demo section with memory and learning features"""
+        st.header("🤖 Enhanced RAG Demo - AI Learning Assistant")
+        st.markdown("Upload documents or use local files to create an AI-powered learning experience with memory and personalized tutoring.")
+        
+        # Initialize memory store
+        if 'memory_store' not in st.session_state:
+            st.session_state.memory_store = self.MemoryStore()
+        
+        # Memory profile selection
+        st.sidebar.subheader("Profile & Memory")
+        profile_id = st.sidebar.text_input("Profile ID", value="default")
+        memory_short_window = st.sidebar.slider("Short-term window", 4, 12, 6)
+        
+        # Check for local files in downloads directory
+        downloads_dir = Path("downloads")
+        local_files = []
+        
+        if downloads_dir.exists():
+            supported_extensions = ['.pdf', '.docx', '.doc', '.txt', '.pptx', '.ppsx']
+            for ext in supported_extensions:
+                local_files.extend(downloads_dir.rglob(f'*{ext}'))
+        
+        if not local_files and not st.session_state.uploaded_files:
+            st.info("📁 **No Local Files Found**")
+            st.markdown("""
+            **To use the RAG demo, you need to:**
+            1. Download files locally using the Download section
+            2. Or upload files manually using the file uploader below
             
-        st.header("🤖 RAG Demo - AI Learning Assistant")
-        st.markdown("Upload documents or YouTube videos to create an AI-powered learning experience.")
+            This approach works around Canvas API permission restrictions by processing files locally.
+            """)
+            
+            # File uploader as fallback
+            uploaded_files = st.file_uploader(
+                "Upload files for RAG processing",
+                type=['pdf', 'docx', 'doc', 'txt', 'pptx', 'ppsx'],
+                accept_multiple_files=True,
+                help="Upload files if you don't have any in the downloads folder"
+            )
+            
+            if uploaded_files:
+                st.session_state.uploaded_files = []
+                for uploaded_file in uploaded_files:
+                    # Save uploaded file temporarily
+                    temp_path = Path("temp") / uploaded_file.name
+                    temp_path.parent.mkdir(exist_ok=True)
+                    with open(temp_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                    
+                    # Extract text
+                    result = self._extract_text_from_file(temp_path)
+                    if result.get('success'):
+                        st.session_state.uploaded_files.append({
+                            'name': uploaded_file.name,
+                            'text': result.get('full_text', ''),
+                            'type': 'uploaded_document',
+                            'file_path': str(temp_path)
+                        })
+                    temp_path.unlink()  # Clean up temp file
+                
+                if st.session_state.uploaded_files:
+                    st.success(f"✅ Processed {len(st.session_state.uploaded_files)} uploaded files!")
+        
+        # Show available files
+        all_files = []
+        if local_files:
+            for file_path in local_files[:10]:  # Limit to first 10 files
+                result = self._extract_text_from_file(file_path)
+                if result.get('success'):
+                    all_files.append({
+                        'name': file_path.name,
+                        'text': result.get('full_text', ''),
+                        'type': 'local_document',
+                        'file_path': str(file_path)
+                    })
+        
+        if st.session_state.uploaded_files:
+            all_files.extend(st.session_state.uploaded_files)
+        
+        if not all_files:
+            return
         
         # Create tabs for different RAG features
-        rag_tab1, rag_tab2, rag_tab3, rag_tab4 = st.tabs(["📄 Document Ingestion", "📝 AI Notes", "💬 QA Chatbot", "🔗 Resources"])
+        rag_tab1, rag_tab2, rag_tab3, rag_tab4 = st.tabs(["📄 Document Browser", "💬 RAG Chatbot", "🎓 Learning Mode", "🔗 Resources"])
         
         with rag_tab1:
-            self.render_document_ingestion()
+            self.render_document_browser(all_files)
         
         with rag_tab2:
-            self.render_ai_notes_generation()
+            self.render_rag_chatbot(all_files, profile_id, memory_short_window)
         
         with rag_tab3:
-            self.render_qa_chatbot()
+            self.render_learning_mode(all_files, profile_id, memory_short_window)
         
         with rag_tab4:
-            self.render_rag_resources_tab()
+            self.render_resource_recommendations(all_files)
+    
+    def render_document_browser(self, all_files):
+        """Render document browser with enhanced preview"""
+        st.subheader("📄 Document Browser")
+        
+        # Create the beautiful header display
+        st.markdown("""
+        <div style="
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 30px;
+            border-radius: 15px;
+            margin: 20px 0;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            text-align: center;
+        ">
+            <h2 style="color: white; margin: 0; font-size: 28px;">🤖 AI-Powered Note Generation</h2>
+            <p style="color: white; margin: 10px 0 0 0; font-size: 18px; opacity: 0.9;">📁 Course Files</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Organize files by course/directory
+        course_files = {}
+        for file_info in all_files:
+            file_path = Path(file_info['file_path'])
+            # Extract course name from path
+            course_name = "Unknown Course"
+            if len(file_path.parts) >= 2:
+                course_name = file_path.parts[-2]  # Parent directory name
+            
+            if course_name not in course_files:
+                course_files[course_name] = []
+            course_files[course_name].append(file_info)
+        
+        # Display files organized by course
+        if course_files:
+            for course_name, files in course_files.items():
+                # Course header
+                st.markdown(f"""
+                <div style="
+                    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+                    padding: 20px;
+                    border-radius: 10px;
+                    margin: 15px 0;
+                    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+                ">
+                    <h3 style="color: white; margin: 0; font-size: 20px;">📚 {course_name}</h3>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Display files in this course
+                for file_info in files:
+                    file_type_display = {
+                        'local_document': '📄',
+                        'uploaded_document': '📤',
+                        'course_document': '📄',
+                        'video': '🎥',
+                        'document': '📄'
+                    }.get(file_info['type'], '📄')
+                    
+                    # Create file selection interface
+                    col1, col2, col3 = st.columns([1, 8, 1])
+                    
+                    with col1:
+                        # File icon
+                        st.markdown(f"<div style='text-align: center; padding: 10px;'>{file_type_display}</div>", unsafe_allow_html=True)
+                    
+                    with col2:
+                        # File name and selection
+                        file_key = f"select_{file_info['name']}_{course_name}"
+                        if st.checkbox(f"**{file_info['name']}**", key=file_key):
+                            # Show content preview when selected
+                            st.markdown("---")
+                            st.markdown("### 📄 Content Preview")
+                            
+                            # Create a beautiful container for the content preview
+                            st.markdown("""
+                            <div style="
+                                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                padding: 20px;
+                                border-radius: 15px;
+                                margin: 10px 0;
+                                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+                                border: 1px solid rgba(255, 255, 255, 0.2);
+                            ">
+                                <div style="
+                                    background: white;
+                                    padding: 20px;
+                                    border-radius: 10px;
+                                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                                    max-height: 300px;
+                                    overflow-y: auto;
+                                ">
+                            """, unsafe_allow_html=True)
+                            
+                            # Format the content preview with enhanced styling
+                            preview_text = file_info['text'][:1000] + "..." if len(file_info['text']) > 1000 else file_info['text']
+                            formatted_preview = self._format_content_preview(preview_text, file_info['name'])
+                            st.markdown(formatted_preview)
+                            
+                            st.markdown("""
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            # AI Processing section
+                            st.markdown("""
+                            <div style="
+                                background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+                                padding: 20px;
+                                border-radius: 10px;
+                                margin: 15px 0;
+                                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+                                text-align: center;
+                            ">
+                                <h4 style="color: white; margin: 0; font-size: 18px;">🤖 AI Processing</h4>
+                                <p style="color: white; margin: 10px 0 0 0; opacity: 0.9;">👈 Please select a file from the course list to generate AI notes.</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                    
+                    with col3:
+                        # Action buttons
+                        if st.button("📝", key=f"notes_{file_info['name']}_{course_name}", help="Generate AI Notes"):
+                            st.session_state.selected_file_for_notes = file_info
+                            st.success("File selected for AI note generation!")
+                        
+                        if st.button("👁️", key=f"preview_{file_info['name']}_{course_name}", help="Quick Preview"):
+                            st.info(f"Preview: {file_info['name']}")
+        
+        else:
+            # No files found message
+            st.markdown("""
+            <div style="
+                background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+                padding: 30px;
+                border-radius: 15px;
+                margin: 20px 0;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+                text-align: center;
+            ">
+                <h3 style="color: #8b4513; margin: 0; font-size: 24px;">📁 No Course Files Found</h3>
+                <p style="color: #8b4513; margin: 15px 0 0 0; font-size: 16px;">
+                    Please download some course files first or upload documents to get started.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    def render_rag_chatbot(self, all_files, profile_id, memory_short_window):
+        """Render RAG Chatbot with Memory"""
+        st.subheader("💬 RAG Chatbot with Memory")
+        
+        # Initialize chat history
+        if "chat_messages" not in st.session_state:
+            st.session_state.chat_messages = []
+        if "chat_cooldown" not in st.session_state:
+            st.session_state.chat_cooldown = 0.0
+
+        # Chat container
+        chat_container = st.container()
+        
+        # Display chat history in scrollable container
+        with chat_container:
+            for msg in st.session_state.chat_messages:
+                if msg.get("role") == "user":
+                    st.markdown(f"**You:** {msg.get('content','')}")
+                else:
+                    st.markdown(f"**Assistant:** {msg.get('content','')}")
+
+        # Chat input at bottom
+        st.markdown("---")
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            user_q = st.text_input("Ask a question about your documents...", key="chat_input", placeholder="Type your question here...")
+        with col2:
+            send_button = st.button("Send", key="chat_send", type="primary")
+        
+        if send_button and user_q:
+            # Simple cooldown to avoid hammering
+            now = time.time()
+            if now - st.session_state.chat_cooldown < 3.0:
+                st.warning("Please wait a moment before sending another message.")
+                st.stop()
+            
+            with st.spinner("Retrieving and answering..."):
+                # Simple document search
+                relevant_docs = []
+                for doc in all_files:
+                    if user_q.lower() in doc['text'].lower():
+                        relevant_docs.append({
+                            "source": doc['name'],
+                            "chunk_index": 0,
+                            "text": doc['text'][:1000] + "..." if len(doc['text']) > 1000 else doc['text']
+                        })
+                
+                # Memory contexts
+                mem_ctx = st.session_state.memory_store.memory_contexts(st.session_state.chat_messages, profile_id=profile_id, short_window=memory_short_window)
+                all_ctx = relevant_docs + mem_ctx
+                
+                if not all_ctx:
+                    answer = "No relevant information found in the documents. Please try a different question or upload more documents."
+                else:
+                    try:
+                        answer = st.session_state.memory_store._answer_with_context(user_q, all_ctx)
+                    except Exception as e:
+                        answer = f"Error generating response: {str(e)}"
+                
+                st.session_state.chat_messages.append({"role": "user", "content": user_q})
+                st.session_state.chat_messages.append({"role": "assistant", "content": answer})
+                
+                # Try to update long-term memory occasionally
+                _ = st.session_state.memory_store.summarize_and_store_long_term(st.session_state.chat_messages, profile_id=profile_id)
+                st.session_state.chat_cooldown = time.time()
+                st.rerun()
+    
+    def render_learning_mode(self, all_files, profile_id, memory_short_window):
+        """Render Learning Mode with AI Tutor"""
+        st.subheader("🎓 Learning Mode - AI Tutor")
+        
+        # Initialize learning chat
+        if "learning_messages" not in st.session_state:
+            st.session_state.learning_messages = []
+        if "learning_cooldown" not in st.session_state:
+            st.session_state.learning_cooldown = 0.0
+        if "learning_initialized" not in st.session_state:
+            st.session_state.learning_initialized = False
+
+        # Initialize tutor with topics from documents
+        if not st.session_state.learning_initialized:
+            # Extract topics from document content
+            all_texts = [doc['text'] for doc in all_files]
+            topics = self.extract_topics_from_notes(all_texts)
+            if not topics:
+                topics = [f"Topic {i+1}" for i in range(min(5, len(all_files)))]
+            
+            st.session_state.learning_topics = topics[:10]
+            st.session_state.learning_initialized = True
+            
+            # Welcome message
+            welcome_msg = f"Hello! I'm your AI learning tutor. I can help you learn about these topics: {', '.join(topics[:5])}. What would you like to explore first?"
+            st.session_state.learning_messages.append({"role": "assistant", "content": welcome_msg})
+
+        # Chat container
+        learning_container = st.container()
+        
+        # Display chat history
+        with learning_container:
+            for msg in st.session_state.learning_messages:
+                if msg.get("role") == "user":
+                    st.markdown(f"**You:** {msg.get('content','')}")
+                else:
+                    st.markdown(f"**Tutor:** {msg.get('content','')}")
+
+        # Chat input at bottom
+        st.markdown("---")
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            user_input = st.text_input("Ask your tutor anything...", key="learning_input", placeholder="What would you like to learn about?")
+        with col2:
+            send_button = st.button("Send", key="learning_send", type="primary")
+        
+        if send_button and user_input:
+            # Cooldown check
+            now = time.time()
+            if now - st.session_state.learning_cooldown < 3.0:
+                st.warning("Please wait a moment before sending another message.")
+                st.stop()
+            
+            with st.spinner("Tutor is thinking..."):
+                # Build context from documents
+                relevant_docs = []
+                for doc in all_files:
+                    if user_input.lower() in doc['text'].lower():
+                        relevant_docs.append({
+                            "source": doc['name'],
+                            "chunk_index": 0,
+                            "text": doc['text'][:1000] + "..." if len(doc['text']) > 1000 else doc['text']
+                        })
+                
+                # Memory context
+                mem_ctx = st.session_state.memory_store.memory_contexts(st.session_state.learning_messages, profile_id=profile_id, short_window=memory_short_window)
+                
+                # Get recommended resources
+                relevant_topic = user_input
+                for topic in st.session_state.learning_topics:
+                    if topic.lower() in user_input.lower() or user_input.lower() in topic.lower():
+                        relevant_topic = topic
+                        break
+                
+                vlinks = self.recommend_youtube_ddg(relevant_topic)
+                alinks = self.recommend_articles_ddg(relevant_topic)
+                res_text = f"Recommended Videos for '{relevant_topic}':\n" + "\n".join([f"- {l['title']}: {l['url']}" for l in vlinks[:2]]) + \
+                              f"\nRecommended Articles for '{relevant_topic}':\n" + "\n".join([f"- {a['title']}: {a['url']}" for a in alinks[:2]])
+                res_ctx = [{"source": "resources", "chunk_index": 0, "text": res_text}]
+                
+                all_ctx = relevant_docs + mem_ctx + res_ctx
+                
+                # Tutor prompt
+                prompt = f"You are an AI learning tutor. Help the student learn by explaining concepts, asking questions, suggesting resources, and giving small assignments. Be encouraging and educational. Student said: {user_input}"
+                
+                try:
+                    reply = st.session_state.memory_store._answer_with_context(prompt, all_ctx)
+                except Exception as e:
+                    reply = f"I'm having trouble connecting right now. Please try again in a moment. Error: {e}"
+                
+                st.session_state.learning_messages.append({"role": "user", "content": user_input})
+                st.session_state.learning_messages.append({"role": "assistant", "content": reply})
+                
+                # Update long-term memory
+                _ = st.session_state.memory_store.summarize_and_store_long_term(st.session_state.learning_messages, profile_id=profile_id)
+                st.session_state.learning_cooldown = time.time()
+                st.rerun()
+    
+    def render_resource_recommendations(self, all_files):
+        """Render Resource Recommendations"""
+        st.subheader("🔗 Recommended Resources")
+        
+        # Build recommendations per detected topic from documents
+        all_texts = [doc['text'] for doc in all_files]
+        topics = self.extract_topics_from_notes(all_texts)
+        if not topics:
+            st.info("Could not detect headings; using first few sections as topics.")
+            topics = [f"Topic {i+1}" for i in range(min(5, len(all_files)))]
+        
+        for topic in topics[:10]:
+            with st.expander(topic, expanded=False):
+                st.markdown("**Related Videos (via DuckDuckGo)**")
+                vlinks = self.recommend_youtube_ddg(topic)
+                if vlinks:
+                    for l in vlinks:
+                        st.write(f"- [{l['title']}]({l['url']})")
+                else:
+                    st.write("No videos found for this topic.")
+                
+                st.markdown("**Related Articles (via DuckDuckGo)**")
+                alinks = self.recommend_articles_ddg(topic)
+                if alinks:
+                    for a in alinks:
+                        st.write(f"- [{a['title']}]({a['url']})")
+                else:
+                    st.write("No articles found for this topic.")
     
     def render_document_ingestion(self):
         """Render document ingestion interface"""
@@ -3631,22 +4718,18 @@ class CanvasCourseExplorer:
                         # Process selected course files
                         if selected_files:
                             for file_info in selected_files:
-                                # Extract text from course file using navdeep TextExtractionPipeline
-                                if NAVDEEP_AVAILABLE:
-                                    pipeline = TextExtractionPipeline()
-                                    result = pipeline.extract_from_file(file_info['path'])
-                                    
-                                    if result.get('success') and result.get('full_text'):
-                                        text = result['full_text']
-                                        st.session_state.uploaded_files.append({
-                                            'name': f"{file_info['name']} ({file_info['course']})",
-                                            'text': text,
-                                            'type': 'course_document'
-                                        })
-                                    else:
-                                        st.warning(f"⚠️ Could not extract text from {file_info['name']}")
+                                # Extract text from course file using built-in method
+                                result = self._extract_text_from_file(Path(file_info['path']))
+                                
+                                if result.get('success') and result.get('full_text'):
+                                    text = result['full_text']
+                                    st.session_state.uploaded_files.append({
+                                        'name': f"{file_info['name']} ({file_info['course']})",
+                                        'text': text,
+                                        'type': 'course_document'
+                                    })
                                 else:
-                                    st.error("Navdeep TextExtractionPipeline not available")
+                                    st.warning(f"⚠️ Could not extract text from {file_info['name']}: {result.get('error', 'Unknown error')}")
                         
                         # Process YouTube URL
                         if youtube_url:
@@ -3679,44 +4762,233 @@ class CanvasCourseExplorer:
                     'document': '📄 Document'
                 }.get(file_info['type'], file_info['type'].title())
                 
-                with st.expander(f"{file_type_display}: {file_info['name']}"):
-                    st.write(f"Content preview: {file_info['text'][:200]}...")
+                # Create a styled expander with better visual appeal
+                expander_style = """
+                <style>
+                .streamlit-expanderHeader {
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    border-radius: 10px;
+                    padding: 10px;
+                    margin: 5px 0;
+                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                }
+                .streamlit-expanderContent {
+                    background: #f8f9fa;
+                    border-radius: 0 0 10px 10px;
+                    padding: 15px;
+                }
+                </style>
+                """
+                st.markdown(expander_style, unsafe_allow_html=True)
+                
+                with st.expander(f"📄 {file_type_display}: {file_info['name']}", expanded=False):
+                    # Enhanced content preview with prettified formatting
+                    st.markdown("### 📄 Content Preview")
+                    
+                    # Create a beautiful container for the content preview
+                    st.markdown("""
+                    <div style="
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        padding: 20px;
+                        border-radius: 15px;
+                        margin: 10px 0;
+                        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+                        border: 1px solid rgba(255, 255, 255, 0.2);
+                    ">
+                        <div style="
+                            background: white;
+                            padding: 20px;
+                            border-radius: 10px;
+                            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                            max-height: 400px;
+                            overflow-y: auto;
+                        ">
+                    """, unsafe_allow_html=True)
+                    
+                    # Format the content preview with enhanced styling
+                    preview_text = file_info['text'][:2000] + "..." if len(file_info['text']) > 2000 else file_info['text']
+                    formatted_preview = self._format_content_preview(preview_text, file_info['name'])
+                    st.markdown(formatted_preview)
+                    
+                    st.markdown("""
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
                     if st.button(f"🗑️ Remove", key=f"remove_{i}"):
                         st.session_state.uploaded_files.pop(i)
                         st.rerun()
     
     def render_ai_notes_generation(self):
         """Render AI notes generation interface"""
-        st.subheader("📝 AI Notes Generation")
+        st.subheader("📝 AI Notes Generation (Local Files)")
         
-        if not st.session_state.uploaded_files:
-            st.info("Upload documents first to generate AI notes")
+        # Check for local files in downloads directory
+        downloads_dir = Path("downloads")
+        local_files = []
+        
+        if downloads_dir.exists():
+            # Find all supported files in downloads directory
+            supported_extensions = ['.pdf', '.docx', '.doc', '.txt', '.pptx', '.ppsx']
+            for ext in supported_extensions:
+                local_files.extend(downloads_dir.rglob(f'*{ext}'))
+        
+        if not local_files and not st.session_state.uploaded_files:
+            st.info("📁 **No Local Files Found**")
+            st.markdown("""
+            **To generate AI notes, you need to:**
+            1. Download files locally using the Download section
+            2. Or upload files manually using the file uploader below
+            
+            This approach works around Canvas API permission restrictions by processing files locally.
+            """)
+            
+            # File uploader as fallback
+            uploaded_files = st.file_uploader(
+                "Upload files for AI processing",
+                type=['pdf', 'docx', 'doc', 'txt', 'pptx', 'ppsx'],
+                accept_multiple_files=True,
+                help="Upload files if you don't have any in the downloads folder"
+            )
+            
+            if uploaded_files:
+                st.session_state.uploaded_files = uploaded_files
+                st.success(f"✅ Uploaded {len(uploaded_files)} files")
+                st.rerun()
+            
             return
         
-        if st.button("🤖 Generate AI Notes", type="primary"):
-            with st.spinner("Generating AI notes..."):
-                try:
-                    # Combine all uploaded content
-                    combined_text = "\n\n".join([f['text'] for f in st.session_state.uploaded_files])
-                    
-                    # Generate notes using the AI pipeline
-                    notes = generate_notes_from_text(combined_text)
-                    st.session_state.current_notes = notes
-                    st.session_state.notes_generated = True
-                    
-                    # Extract topics for resources
-                    topics = extract_topics_from_text(combined_text)
-                    st.session_state.extracted_topics = topics
-                    
-                    st.success("✅ AI notes generated successfully!")
-                    
-                except Exception as e:
-                    st.error(f"Error generating notes: {e}")
+        # Show available local files
+        if local_files:
+            st.success(f"📁 Found {len(local_files)} files in downloads directory")
+            
+            # File selection interface
+            st.markdown("### 📋 Select Files to Process")
+            
+            # Group files by course/folder
+            file_groups = {}
+            for file_path in local_files:
+                # Get the course folder name (parent directory)
+                course_folder = file_path.parent.name
+                if course_folder not in file_groups:
+                    file_groups[course_folder] = []
+                file_groups[course_folder].append(file_path)
+            
+            # Display files grouped by course
+            selected_files = []
+            for course_name, files in file_groups.items():
+                with st.expander(f"📚 {course_name} ({len(files)} files)", expanded=True):
+                    for file_path in files:
+                        file_size = file_path.stat().st_size / (1024 * 1024)  # MB
+                        col1, col2, col3 = st.columns([3, 1, 1])
+                        
+                        with col1:
+                            st.write(f"📄 {file_path.name}")
+                        with col2:
+                            st.write(f"{file_size:.1f} MB")
+                        with col3:
+                            if st.checkbox("Select", key=f"select_{file_path.name}"):
+                                selected_files.append(file_path)
+            
+            if not selected_files:
+                st.warning("⚠️ Please select at least one file to process")
+                return
+        
+        # Show processing options first
+        st.markdown("### ⚙️ Processing Options")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            embed_model = st.selectbox(
+                "Embedding Model",
+                ["sentence-transformers/all-MiniLM-L6-v2", "sentence-transformers/all-mpnet-base-v2"],
+                index=0
+            )
+        
+        with col2:
+            chunk_size = st.slider("Chunk Size", 500, 2000, 1000)
+        
+        with col3:
+            group_size = st.slider("Group Size", 1, 5, 3)
+        
+        # Processing buttons
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            if st.button("🤖 Generate AI Notes", type="primary"):
+                with st.spinner("Generating AI notes from selected files..."):
+                    try:
+                        # Use selected local files if available, otherwise uploaded files
+                        files_to_process = selected_files if selected_files else st.session_state.uploaded_files
+                        
+                        if not files_to_process:
+                            st.error("❌ No files selected for processing")
+                            return
+                        
+                        # Convert uploaded files to Path objects if needed
+                        if st.session_state.uploaded_files and not selected_files:
+                            files_to_process = [Path(f.name) for f in st.session_state.uploaded_files]
+                        
+                        # Process the files with selected parameters
+                        self.process_files_for_notes(
+                            files=files_to_process,
+                            title="AI Generated Notes",
+                            embed_model=embed_model,
+                            top_k=5,
+                            chunk_size=chunk_size,
+                            group_size=group_size
+                        )
+                        
+                    except Exception as e:
+                        st.error(f"❌ Error generating notes: {str(e)}")
+        
+        with col2:
+            if st.button("🔄 Refresh File List"):
+                st.rerun()
+        
+        # Show file processing summary
+        if selected_files or st.session_state.uploaded_files:
+            st.markdown("### 📊 Processing Summary")
+            total_files = len(selected_files) if selected_files else len(st.session_state.uploaded_files)
+            total_size = sum(f.stat().st_size for f in selected_files) if selected_files else 0
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Files Selected", total_files)
+            with col2:
+                st.metric("Total Size", f"{total_size / (1024*1024):.1f} MB")
+            with col3:
+                st.metric("Model", embed_model.split('/')[-1])
         
         # Display generated notes
         if st.session_state.notes_generated and st.session_state.current_notes:
             st.subheader("📄 Generated Notes")
+            
+            # Create a beautiful container for the notes
+            st.markdown("""
+            <div style="
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                padding: 20px;
+                border-radius: 15px;
+                margin: 10px 0;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+            ">
+                <div style="
+                    background: white;
+                    padding: 20px;
+                    border-radius: 10px;
+                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                ">
+            """, unsafe_allow_html=True)
+            
             st.markdown(st.session_state.current_notes)
+            
+            st.markdown("""
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
             
             # Download notes
             st.download_button(
@@ -3873,7 +5145,71 @@ class CanvasCourseExplorer:
             
             ### Note:
             This app focuses on data you have access to as a student. Some features like file downloads may not be available due to Canvas permissions.
+            
+            ### 🔧 Permission Troubleshooting:
+            If you encounter permission errors, use the diagnostic tools below to identify and resolve issues.
+            
+            ### 📁 Local File Processing:
+            For document processing and AI notes generation, the app now focuses on local files to work around Canvas API permission restrictions.
             """)
+            
+            # Permission troubleshooting section
+            st.markdown("---")
+            st.markdown("### 🔧 Permission Troubleshooting")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("🔍 Run Permission Diagnostic", help="Test your Canvas API token permissions"):
+                    try:
+                        from canvas_permission_diagnostic import CanvasPermissionDiagnostic
+                        diagnostic = CanvasPermissionDiagnostic(st.session_state.client.base_url, st.session_state.client.api_token)
+                        results = diagnostic.run_full_diagnostic()
+                        diagnostic.print_summary()
+                        st.success("Diagnostic completed! Check the console output for details.")
+                    except Exception as e:
+                        st.error(f"Diagnostic failed: {e}")
+            
+            with col2:
+                if st.button("✅ Validate Token Permissions", help="Detailed validation of your API token"):
+                    try:
+                        from canvas_permission_validator import CanvasPermissionValidator
+                        validator = CanvasPermissionValidator(st.session_state.client.base_url, st.session_state.client.api_token)
+                        results = validator.validate_all_permissions()
+                        validator.print_validation_report(results)
+                        st.success("Validation completed! Check the console output for details.")
+                    except Exception as e:
+                        st.error(f"Validation failed: {e}")
+            
+            # Common permission issues
+            with st.expander("📋 Common Permission Issues & Solutions", expanded=False):
+                st.markdown("""
+                **🚫 Files Access Forbidden:**
+                - **Cause:** API token lacks Files scope permission
+                - **Solution:** 
+                  1. Go to Canvas → Account → Settings → Approved Integrations
+                  2. Create new token with Files scope enabled
+                  3. Contact administrator if scopes cannot be modified
+                
+                **🚫 Courses Access Failed:**
+                - **Cause:** Not enrolled in courses or API access restricted
+                - **Solution:**
+                  1. Verify course enrollment
+                  2. Check institutional API restrictions
+                  3. Contact Canvas administrator
+                
+                **🚫 Authentication Failed:**
+                - **Cause:** Invalid or expired API token
+                - **Solution:**
+                  1. Generate new API token
+                  2. Verify Canvas URL is correct
+                  3. Check token is copied correctly
+                
+                **💡 Alternative Approaches:**
+                - Use Canvas web interface for file downloads
+                - Export course content manually
+                - Request elevated permissions from administrator
+                """)
 
 def main():
     """Main function"""

@@ -1,0 +1,67 @@
+# Canvas LMS Streamlit App V2 - Enhanced RAG Features
+# Complete requirements for the Canvas app with AI-powered learning features
+
+# Core HTTP and API libraries
+requests>=2.31.0
+
+# Web UI Framework
+streamlit>=1.28.0
+
+# Data processing and analysis
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Configuration and environment management
+python-dotenv>=1.0.0
+keyring>=24.0.0
+
+# Document processing and text extraction
+PyPDF2>=3.0.0
+python-docx>=0.8.11
+python-pptx>=0.6.21
+
+# Machine Learning and AI
+sentence-transformers>=2.2.2
+faiss-cpu>=1.7.4
+scikit-learn>=1.3.0
+
+# Text processing and NLP
+nltk>=3.8.1
+spacy>=3.6.0
+
+# Web scraping and search capabilities
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# Memory and storage optimization
+joblib>=1.3.0
+
+# File and path utilities
+pathlib2>=2.3.7
+
+# Progress bars and utilities
+tqdm>=4.65.0
+python-dateutil>=2.8.2
+
+# Optional AI/LLM backends (uncomment as needed for full RAG functionality)
+# openai>=1.0.0
+# groq>=0.4.0
+# ollama>=0.1.0
+
+# Development and testing (optional)
+# pytest>=7.4.0
+# pytest-cov>=4.1.0
+# black>=23.0.0
+# flake8>=6.0.0
+# mypy>=1.5.0
+
+# Additional dependencies for enhanced features
+# For better PDF processing (alternative to PyPDF2)
+# pymupdf>=1.23.0
+
+# For advanced text processing
+# transformers>=4.30.0
+# torch>=2.0.0
+
+# For web search enhancements
+# duckduckgo-search>=3.8.0
