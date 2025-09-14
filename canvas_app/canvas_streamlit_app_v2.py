@@ -3583,7 +3583,7 @@ class CanvasCourseExplorer:
             return
         
         # Course selection with expandable view
-        for course_folder in course_folders:
+        for course_idx, course_folder in enumerate(course_folders):
             course_path = os.path.join(downloads_dir, course_folder)
             
             with st.expander(f"📚 {course_folder}", expanded=False):
@@ -3593,11 +3593,14 @@ class CanvasCourseExplorer:
                             if os.path.isfile(os.path.join(course_path, f))]
                     
                     if files:
-                        for file_name in sorted(files):
+                        for file_idx, file_name in enumerate(sorted(files)):
                             file_path = os.path.join(course_path, file_name)
                             
+                            # Create unique key using course and file indices
+                            unique_key = f"select_{course_idx}_{file_idx}_{course_folder}_{file_name}"
+                            
                             # File selection button
-                            if st.button(f"📄 {file_name}", key=f"select_{course_folder}_{file_name}"):
+                            if st.button(f"📄 {file_name}", key=unique_key):
                                 st.session_state.selected_file_for_ai = {
                                     'course': course_folder,
                                     'file_name': file_name,
